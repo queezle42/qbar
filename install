@@ -1,0 +1,18 @@
+#!/bin/sh
+
+set -e
+
+EXECUTABLE_NAME=qbar
+
+LOCAL_BIN=`stack path --local-bin`
+
+EXECUTABLE_PATH=$LOCAL_BIN/$EXECUTABLE_NAME
+
+stack install
+
+if [ -d "$LOCAL_ZSH_COMPLETION_PATH" ]; then
+	ZSH_COMPLETION_SCRIPT_PATH=$LOCAL_ZSH_COMPLETION_PATH/_$EXECUTABLE_NAME
+	$EXECUTABLE_PATH --zsh-completion-script $EXECUTABLE_PATH > $ZSH_COMPLETION_SCRIPT_PATH
+	echo
+	echo "Installed zsh completions for $EXECUTABLE_NAME to $ZSH_COMPLETION_SCRIPT_PATH";
+fi

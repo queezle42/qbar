@@ -1,0 +1,20 @@
+#!/bin/sh
+
+set -e
+
+DEFAULT_BAR_COMMAND="qbar server"
+EXECUTABLE_NAME=qbar
+SWAY_BAR_ID=bar-0
+
+stack build
+
+TEMP_DIR=$(mktemp -d)
+STDERR=$TEMP_DIR/stderr
+mkfifo $STDERR
+
+trap "swaymsg bar $SWAY_BAR_ID status_command $DEFAULT_BAR_COMMAND; rm -rf $TEMP_DIR" EXIT INT HUP TERM
+
+swaymsg bar $SWAY_BAR_ID status_command "exec $(stack path --local-install-root)/bin/$EXECUTABLE_NAME -- server 2> $STDERR"
+
+# show output and run forever (use Ctrl-C to stop)
+cat $STDERR
