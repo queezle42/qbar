@@ -39,6 +39,10 @@ packages:
 # (e.g., acme-missiles-0.3)
 # extra-deps: []
 
+# Disable pure nix-shell environment on NixOS, because access to XDG_RUNTIME_DIR is needed for the control socket
+nix:
+  pure: false
+
 # Override default flag values for local packages and extra-deps
 # flags: {}
 
