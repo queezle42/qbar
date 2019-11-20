@@ -28,7 +28,7 @@ import System.IO (stdin, stdout, stderr, hFlush, hPutStrLn)
 import System.Posix.Signals
 
 data Handle = Handle {
-  handleActionList :: IORef [(T.Text, IO ())],
+  handleActionList :: IORef [(T.Text, Click -> IO ())],
   handleActiveFilter :: IORef Filter
 }
 
@@ -91,9 +91,9 @@ renderLine MainOptions{verbose} Handle{handleActionList} blockFilter blocks prev
 
   return encodedOutput
   where
-    clickActionList :: [(T.Text, IO ())]
+    clickActionList :: [(T.Text, Click -> IO ())]
     clickActionList = mapMaybe getClickAction blocks
-    getClickAction :: Block -> Maybe (T.Text, IO ())
+    getClickAction :: Block -> Maybe (T.Text, Click -> IO ())
     getClickAction block = if hasBlockName && hasClickAction then Just (fromJust maybeBlockName, fromJust maybeClickAction) else Nothing
       where
         maybeBlockName = getBlockName block
@@ -106,7 +106,7 @@ createBarUpdateChannel = do
   event <- Event.newSet
   return (BarUpdateChannel $ Event.set event, event)
 
-handleStdin :: MainOptions -> IORef [(T.Text, IO ())] -> IO ()
+handleStdin :: MainOptions -> IORef [(T.Text, Click -> IO ())] -> IO ()
 handleStdin options actionListIORef = forever $ do
   line <- BSSC8.hGetLine stdin
 
@@ -116,17 +116,17 @@ handleStdin options actionListIORef = forever $ do
       BSSC8.hPutStrLn stderr line
       hFlush stderr
 
-    clickActionList <- readIORef actionListIORef
-    let maybeParsedClick = decode $ removeComma $ BS.fromStrict line
-    let clickAction' = getClickAction clickActionList maybeParsedClick
-    async (fromMaybe (return ()) clickAction') >>= link
+    let maybeClick = decode $ removeComma $ BS.fromStrict line
+    case maybeClick of
+      Just click -> do
+        clickActionList <- readIORef actionListIORef
+        let clickAction' = getClickAction clickActionList click
+        async ((fromMaybe discard clickAction') click) >>= link
+      Nothing -> return ()
 
   where
-    getClickAction :: [(T.Text, IO ())] -> Maybe Click -> Maybe (IO ())
-    getClickAction clickActionList maybeParsedClick = do
-      parsedClick <- maybeParsedClick
-      let blockName = name parsedClick
-      lookup blockName clickActionList
+    getClickAction :: [(T.Text, Click -> IO ())] -> Click -> Maybe (Click -> IO ())
+    getClickAction clickActionList click = lookup (name click) clickActionList
     removeComma :: C8.ByteString -> C8.ByteString
     removeComma line
       | C8.head line == ',' = C8.tail line

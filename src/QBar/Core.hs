@@ -31,13 +31,14 @@ import Data.Colour.RGBSpace
 
 data Block = Block {
   values :: HM.HashMap T.Text T.Text,
-  clickAction :: Maybe (IO ())
+  clickAction :: Maybe (Click -> IO ())
 }
 instance Show Block where
   show Block{values} = show values
 
 data Click = Click {
-  name :: T.Text
+  name :: T.Text,
+  button :: Int
 } deriving Show
 $(deriveJSON defaultOptions ''Click)
 
@@ -170,8 +171,8 @@ sharedInterval barUpdateChannel seconds = do
           clickAction = Just (updateClickHandler result)
         }
         where
-          updateClickHandler :: Block -> IO ()
-          updateClickHandler block = do
+          updateClickHandler :: Block -> Click -> IO ()
+          updateClickHandler block _ = do
             -- Give user feedback that the block is updating
             let outdatedBlock = setColor updatingColor $ removePango block
             void $ atomically $ send output $ outdatedBlock
