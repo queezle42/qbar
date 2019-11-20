@@ -24,7 +24,7 @@ import Pipes.Aeson.Unchecked (encode)
 import Pipes.Network.TCP (fromSocket, toSocket)
 import System.Directory (removeFile, doesFileExist)
 import System.Environment (getEnv)
-import System.FilePath ((</>), (<.>))
+import System.FilePath ((</>))
 import System.IO
 
 type CommandChan = TChan Command
@@ -45,7 +45,7 @@ ipcSocketAddress MainOptions{socketLocation} = maybe defaultSocketPath (return .
     defaultSocketPath = do
       xdgRuntimeDir <- getEnv "XDG_RUNTIME_DIR"
       waylandDisplay <- getEnv "WAYLAND_DISPLAY"
-      return $ xdgRuntimeDir </> waylandDisplay <.> "qbar"
+      return $ xdgRuntimeDir </> waylandDisplay <> "-qbar"
 
 sendIpc :: MainOptions -> Command -> IO ()
 sendIpc options@MainOptions{verbose} request = do
