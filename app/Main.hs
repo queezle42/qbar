@@ -12,6 +12,6 @@ main = parseOptions >>= runQBar
 runQBar :: MainOptions -> IO ()
 runQBar options@MainOptions{barCommand} = runCommand barCommand
   where
-    runCommand BarServer = runI3BarConfiguration generateDefaultBarConfig options
+    runCommand BarServer = runBarConfiguration generateDefaultBarConfig options
     runCommand NoFilter = sendIpc options $ SetFilter $ StaticFilter None
     runCommand RainbowFilter = sendIpc options $ SetFilter $ AnimatedFilter Rainbow

@@ -34,4 +34,3 @@ dateBlockProducer barUpdateChannel = do
       void $ atomically $ send output block
       updateBar barUpdateChannel
       update output
-

@@ -8,12 +8,12 @@ import QBar.Cli
 import QBar.ControlSocket
 import QBar.Filter
 
-import Control.Monad (forever, when, unless)
+import Control.Monad (forever, when, unless, forM_)
 import Control.Monad.STM (atomically)
 import Control.Concurrent (threadDelay, forkFinally)
 import Control.Concurrent.Async
 import Control.Concurrent.Event as Event
-import Control.Concurrent.STM.TChan (newTChanIO, readTChan)
+import Control.Concurrent.STM.TChan (TChan, newTChanIO, readTChan, writeTChan, tryReadTChan)
 import Data.Aeson (encode, decode)
 import Data.ByteString.Lazy (hPut)
 import qualified Data.ByteString.Char8 as BSSC8
@@ -45,11 +45,19 @@ runBlock producer = do
 runBlocks :: [BlockProducer] -> IO ([Block], [BlockProducer])
 runBlocks blockProducers = unzip . catMaybes <$> mapM runBlock blockProducers
 
-renderLoop :: MainOptions -> Handle -> BarUpdateEvent -> BS.ByteString -> [BlockProducer] -> IO ()
-renderLoop options handle@Handle{handleActiveFilter} barUpdateEvent = renderLoop'
+renderLoop :: MainOptions -> Handle -> BarUpdateEvent -> BS.ByteString -> TChan BlockProducer -> IO ()
+renderLoop options handle@Handle{handleActiveFilter} barUpdateEvent previousBarOutput newBlockProducers = renderLoop' previousBarOutput []
   where
+    addNewBlockProducers :: [BlockProducer] -> IO [BlockProducer]
+    addNewBlockProducers blockProducers = do
+      maybeNewBlockProducer <- atomically $ tryReadTChan newBlockProducers
+      case maybeNewBlockProducer of
+        Nothing -> return blockProducers
+        Just newBlockProducer -> addNewBlockProducers (newBlockProducer:blockProducers)
     renderLoop' :: BS.ByteString -> [BlockProducer] -> IO ()
-    renderLoop' previousBarOutput blockProducers = do
+    renderLoop' previousBarOutput' blockProducers = do
+      blockProducers' <- addNewBlockProducers blockProducers
+
       blockFilter <- readIORef handleActiveFilter
 
       -- Wait for an event (unless the filter is animated)
@@ -59,14 +67,14 @@ renderLoop options handle@Handle{handleActiveFilter} barUpdateEvent = renderLoop
       threadDelay 10000
       Event.clear barUpdateEvent
 
-      (blocks, blockProducers') <- runBlocks blockProducers
+      (blocks, blockProducers'') <- runBlocks blockProducers'
 
-      currentBarOutput <- renderLine options handle blockFilter blocks previousBarOutput
+      currentBarOutput <- renderLine options handle blockFilter blocks previousBarOutput'
 
       -- Wait for 100ms after rendering a line to limit cpu load of rapid events
       threadDelay 100000
 
-      renderLoop' currentBarOutput blockProducers'
+      renderLoop' currentBarOutput blockProducers''
 
 renderLine :: MainOptions -> Handle -> Filter -> [Block] -> BS.ByteString -> IO BS.ByteString
 renderLine MainOptions{verbose} Handle{handleActionList} blockFilter blocks previousEncodedOutput = do
@@ -141,8 +149,8 @@ installSignalHandlers barUpdateChannel = void $ installHandler sigCONT (Catch si
       hPutStrLn stderr "SIGCONT received"
       updateBar barUpdateChannel
 
-runI3BarConfiguration :: (BarUpdateChannel -> IO [BlockProducer]) -> MainOptions -> IO ()
-runI3BarConfiguration generateBarConfig options = do
+runBarConfiguration :: (BarUpdateChannel -> IO [BlockProducer]) -> MainOptions -> IO ()
+runBarConfiguration generateBarConfig options = do
   -- Create IORef for mouse click callbacks
   actionList <- newIORef []
   --link =<< async (handleStdin options actionList)
@@ -173,6 +181,15 @@ runI3BarConfiguration generateBarConfig options = do
   (barUpdateChannel, barUpdateEvent) <- createBarUpdateChannel
   blockProducers <- generateBarConfig barUpdateChannel
 
+  -- Attach spinner indicator when verbose flag is set
+  let blockProducers' = if verbose options then blockProducers <> [renderIndicator] else blockProducers
+
+  -- Create channel to send new block producers to render loop
+  newBlockProducers <- newTChanIO
+
+  -- Send initial block producers to render loop
+  forM_ blockProducers' $ \ bp -> atomically $ writeTChan newBlockProducers bp
+
   -- Install signal handler for SIGCONT
   installSignalHandlers barUpdateChannel
 
@@ -189,10 +206,7 @@ runI3BarConfiguration generateBarConfig options = do
     updateBar barUpdateChannel
   link socketUpdateAsync
 
-  -- Attach spinner indicator when verbose flag is set
-  let blockProducers' = if verbose options then blockProducers <> [renderIndicator] else blockProducers
-
-  renderLoop options handle barUpdateEvent initialOutput blockProducers'
+  renderLoop options handle barUpdateEvent initialOutput newBlockProducers
 
 createCommandChan :: IO CommandChan
 createCommandChan = newTChanIO

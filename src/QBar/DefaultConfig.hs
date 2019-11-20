@@ -23,4 +23,4 @@ generateDefaultBarConfig barUpdateChannel = do
   let volumeBlock = startPersistentBlockScript barUpdateChannel $ blockLocation "volume-pulseaudio -S -F3"
   let battery = (systemInfoInterval $ blockScript $ blockLocation "battery2")
   let date = dateBlockProducer barUpdateChannel
-  return [todo, wifi, networkEnvironment, cpu, ram, temperature, volumeBlock, battery, date]
+  return [date, battery, volumeBlock, temperature, ram, cpu, networkEnvironment, wifi, todo]
