@@ -27,17 +27,17 @@ isAnimatedFilter :: Filter -> Bool
 isAnimatedFilter (AnimatedFilter _) = True
 isAnimatedFilter _ = False
 
-applyFilter :: Filter -> Double -> [Block] -> [Block]
+applyFilter :: Filter -> Double -> [BlockOutput] -> [BlockOutput]
 applyFilter (StaticFilter None) = static id
 applyFilter (AnimatedFilter Rainbow) = rainbow
 
 static :: a -> Double -> a
 static fn _ = fn
 
-rainbow :: Double -> [Block] -> [Block]
+rainbow :: Double -> [BlockOutput] -> [BlockOutput]
 rainbow time blocks = reverse $ evalState (mapM rainbowBlock $ reverse blocks) 0
   where
-    rainbowBlock :: Block -> State Integer Block
+    rainbowBlock :: BlockOutput -> State Integer BlockOutput
     rainbowBlock block = do
       let cleanBlock = removePango block
       let text = getFullText cleanBlock

@@ -35,14 +35,14 @@ data Handle = Handle {
 renderIndicator :: BlockProducer
 renderIndicator = forever $ each $ map createBlock ["/", "-", "\\", "|"]
 
-runBlock :: BlockProducer -> IO (Maybe (Block, BlockProducer))
+runBlock :: BlockProducer -> IO (Maybe (BlockOutput, BlockProducer))
 runBlock producer = do
   next' <- next producer
   return $ case next' of
     Left _ -> Nothing
     Right (block, newProducer) -> Just (block, newProducer)
 
-runBlocks :: [BlockProducer] -> IO ([Block], [BlockProducer])
+runBlocks :: [BlockProducer] -> IO ([BlockOutput], [BlockProducer])
 runBlocks blockProducers = unzip . catMaybes <$> mapM runBlock blockProducers
 
 renderLoop :: MainOptions -> Handle -> BarUpdateEvent -> BS.ByteString -> TChan BlockProducer -> IO ()
@@ -76,7 +76,7 @@ renderLoop options handle@Handle{handleActiveFilter} barUpdateEvent previousBarO
 
       renderLoop' currentBarOutput blockProducers''
 
-renderLine :: MainOptions -> Handle -> Filter -> [Block] -> BS.ByteString -> IO BS.ByteString
+renderLine :: MainOptions -> Handle -> Filter -> [BlockOutput] -> BS.ByteString -> IO BS.ByteString
 renderLine MainOptions{verbose} Handle{handleActionList} blockFilter blocks previousEncodedOutput = do
   time <- fromRational . toRational <$> getPOSIXTime
   let filteredBlocks = applyFilter blockFilter time blocks
@@ -101,7 +101,7 @@ renderLine MainOptions{verbose} Handle{handleActionList} blockFilter blocks prev
   where
     clickActionList :: [(T.Text, Click -> IO ())]
     clickActionList = mapMaybe getClickAction blocks
-    getClickAction :: Block -> Maybe (T.Text, Click -> IO ())
+    getClickAction :: BlockOutput -> Maybe (T.Text, Click -> IO ())
     getClickAction block = if hasBlockName && hasClickAction then Just (fromJust maybeBlockName, fromJust maybeClickAction) else Nothing
       where
         maybeBlockName = getBlockName block

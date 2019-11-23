@@ -29,12 +29,12 @@ import System.Process.Typed (shell, withProcessWait, setStdin, setStdout, getStd
 
 import Data.Colour.RGBSpace
 
-data Block = Block {
+data BlockOutput = BlockOutput {
   values :: HM.HashMap T.Text T.Text,
   clickAction :: Maybe (Click -> IO ())
 }
-instance Show Block where
-  show Block{values} = show values
+instance Show BlockOutput where
+  show BlockOutput{values} = show values
 
 data Click = Click {
   name :: T.Text,
@@ -42,7 +42,7 @@ data Click = Click {
 } deriving Show
 $(deriveJSON defaultOptions ''Click)
 
-type BlockProducer = Producer Block IO ()
+type BlockProducer = Producer BlockOutput IO ()
 
 data BarUpdateChannel = BarUpdateChannel (IO ())
 type BarUpdateEvent = Event.Event
@@ -57,64 +57,64 @@ updatingColor :: T.Text
 --updatingColor = "#444444"
 updatingColor = "#96989677"
 
-createBlock :: T.Text -> Block
-createBlock text = setColor defaultColor $ Block {
+createBlock :: T.Text -> BlockOutput
+createBlock text = setColor defaultColor $ BlockOutput {
   values = HM.singleton "full_text" text,
   clickAction = Nothing
 }
 
-createErrorBlock :: T.Text -> Block
+createErrorBlock :: T.Text -> BlockOutput
 createErrorBlock = setColor "ff0000" . createBlock
 
-setValue :: T.Text -> T.Text -> Block -> Block
+setValue :: T.Text -> T.Text -> BlockOutput -> BlockOutput
 setValue key val block = block {
   values = HM.insert key val (values block)
 }
 
-getValue :: T.Text -> Block -> Maybe T.Text
+getValue :: T.Text -> BlockOutput -> Maybe T.Text
 getValue key block = HM.lookup key (values block)
 
-adjustValue :: (T.Text -> T.Text) -> T.Text -> Block -> Block
+adjustValue :: (T.Text -> T.Text) -> T.Text -> BlockOutput -> BlockOutput
 adjustValue f k block = block {
   values = HM.adjust f k (values block)
 }
 
-emptyBlock :: Block
+emptyBlock :: BlockOutput
 emptyBlock = createBlock ""
 
-shortText :: T.Text -> Block -> Block
+shortText :: T.Text -> BlockOutput -> BlockOutput
 shortText = setValue "short_text"
 
-fullText :: T.Text -> Block -> Block
+fullText :: T.Text -> BlockOutput -> BlockOutput
 fullText = setValue "full_text"
 
-getFullText :: Block -> T.Text
+getFullText :: BlockOutput -> T.Text
 getFullText = fromMaybe "" . getValue "full_text"
 
-setColor :: T.Text -> Block -> Block
+setColor :: T.Text -> BlockOutput -> BlockOutput
 setColor = setValue "color"
 
-setBlockName :: T.Text -> Block -> Block
+setBlockName :: T.Text -> BlockOutput -> BlockOutput
 setBlockName = setValue "name"
 
-getBlockName :: Block -> Maybe T.Text
+getBlockName :: BlockOutput -> Maybe T.Text
 getBlockName = getValue "name"
 
-pangoMarkup :: Block -> Block
+pangoMarkup :: BlockOutput -> BlockOutput
 pangoMarkup = setValue "markup" "pango"
 
-adjustText :: (T.Text -> T.Text) -> Block -> Block
+adjustText :: (T.Text -> T.Text) -> BlockOutput -> BlockOutput
 adjustText f = adjustValue f "full_text" . adjustValue f "short_text"
 
 coloredText :: T.Text -> T.Text -> T.Text
 coloredText color text = "<span color='" <> color <> "'>" <> text <> "</span>"
 
-addIcon :: T.Text -> Block -> Block
+addIcon :: T.Text -> BlockOutput -> BlockOutput
 addIcon icon block = prefixIcon "full_text" $ prefixIcon "short_text" block
   where
     prefixIcon = adjustValue ((icon <> " ") <>)
 
-removePango :: Block -> Block
+removePango :: BlockOutput -> BlockOutput
 removePango block
   | getValue "markup" block == Just "pango" = adjustText removePangoFromText $ block {
       values = HM.delete "markup" (values block)
@@ -127,13 +127,13 @@ removePango block
         Left _ -> text
         Right parsed -> removeFormatting parsed
 
-modify :: (Block -> Block) -> Pipe Block Block IO ()
+modify :: (BlockOutput -> BlockOutput) -> Pipe BlockOutput BlockOutput IO ()
 modify = PP.map
 
-autoPadding :: Pipe Block Block IO ()
+autoPadding :: Pipe BlockOutput BlockOutput IO ()
 autoPadding = autoPadding' 0 0
   where
-    autoPadding' :: Int64 -> Int64 -> Pipe Block Block IO ()
+    autoPadding' :: Int64 -> Int64 -> Pipe BlockOutput BlockOutput IO ()
     autoPadding' fullLength shortLength = do
       block <- await
       let values' = (values block)
@@ -146,9 +146,9 @@ autoPadding = autoPadding' 0 0
 
 -- | Create a shared interval. Takes a BarUpdateChannel to signal bar updates and an interval (in seconds).Data.Maybe
 -- Returns an IO action that can be used to attach blocks to the shared interval and an async that contains a reference to the scheduler thread.
-sharedInterval :: BarUpdateChannel -> Int -> IO (IO Block -> BlockProducer, Async ())
+sharedInterval :: BarUpdateChannel -> Int -> IO (IO BlockOutput -> BlockProducer, Async ())
 sharedInterval barUpdateChannel seconds = do
-  clientsMVar <- newMVar ([] :: [(IO Block, Output Block)])
+  clientsMVar <- newMVar ([] :: [(IO BlockOutput, Output BlockOutput)])
 
   task <- async $ forever $ do
     threadDelay $ seconds * 1000000
@@ -160,18 +160,18 @@ sharedInterval barUpdateChannel seconds = do
 
   return (addClient clientsMVar, task)
     where
-      runAndFilterClient :: (IO Block, Output Block) -> IO (Maybe (IO Block, Output Block))
+      runAndFilterClient :: (IO BlockOutput, Output BlockOutput) -> IO (Maybe (IO BlockOutput, Output BlockOutput))
       runAndFilterClient client = do
         result <- runClient client
         return $ if result then Just client else Nothing
-      runClient :: (IO Block, Output Block) -> IO Bool
+      runClient :: (IO BlockOutput, Output BlockOutput) -> IO Bool
       runClient (blockAction, output) = do
         result <- blockAction
         atomically $ send output result {
           clickAction = Just (updateClickHandler result)
         }
         where
-          updateClickHandler :: Block -> Click -> IO ()
+          updateClickHandler :: BlockOutput -> Click -> IO ()
           updateClickHandler block _ = do
             -- Give user feedback that the block is updating
             let outdatedBlock = setColor updatingColor $ removePango block
@@ -182,7 +182,7 @@ sharedInterval barUpdateChannel seconds = do
             void $ runClient (blockAction, output)
             -- Notify bar about changed block state, this is usually done by the shared interval handler
             updateBar barUpdateChannel
-      addClient :: MVar [(IO Block, Output Block)] -> IO Block -> BlockProducer
+      addClient :: MVar [(IO BlockOutput, Output BlockOutput)] -> IO BlockOutput -> BlockProducer
       addClient clientsMVar blockAction = do
         -- Spawn the mailbox that preserves the latest block
         (output, input) <- lift $ spawn $ latest emptyBlock
@@ -196,7 +196,7 @@ sharedInterval barUpdateChannel seconds = do
         -- Return a block producer from the mailbox
         fromInput input
 
-blockScript :: FilePath -> IO Block
+blockScript :: FilePath -> IO BlockOutput
 blockScript path = do
   -- The exit code is used for i3blocks signaling but ignored here (=not implemented)
   -- I am trying to replace i3blocks scripts with native haskell blocks, so I do not need it
@@ -209,10 +209,10 @@ blockScript path = do
       [] -> createScriptBlock "-"
     (ExitFailure nr) -> return $ createErrorBlock $ "[" <> (T.pack $ show nr) <> "]"
   where
-    createScriptBlock :: T.Text -> Block
+    createScriptBlock :: T.Text -> BlockOutput
     createScriptBlock text = pangoMarkup $ setBlockName (T.pack path) $ createBlock text
 
-startPersistentBlockScript :: BarUpdateChannel -> FilePath -> Producer Block IO ()
+startPersistentBlockScript :: BarUpdateChannel -> FilePath -> Producer BlockOutput IO ()
 startPersistentBlockScript barUpdateChannel path = do
   (output, input, seal) <- lift $ spawn' $ latest $ emptyBlock
   initialDataEvent <- lift $ Event.new
@@ -234,14 +234,14 @@ startPersistentBlockScript barUpdateChannel path = do
   lift $ Event.wait initialDataEvent
   fromInput input
   where
-    signalFirstBlock :: Event.Event -> Pipe Block Block IO ()
+    signalFirstBlock :: Event.Event -> Pipe BlockOutput BlockOutput IO ()
     signalFirstBlock event = do
       -- Await first block
       await >>= yield
       lift $ Event.set event
       -- Replace with cat
       cat
-    fromHandle :: Handle -> Producer Block IO ()
+    fromHandle :: Handle -> Producer BlockOutput IO ()
     fromHandle handle = forever $ do
       line <- lift $ TIO.hGetLine handle
       yield $ pangoMarkup $ createBlock line

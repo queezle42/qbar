@@ -11,7 +11,7 @@ import Data.Time.LocalTime
 import Pipes
 import Pipes.Concurrent
 
-dateBlock :: IO Block
+dateBlock :: IO BlockOutput
 dateBlock = do
   zonedTime <- getZonedTime
   let date = T.pack (formatTime defaultTimeLocale "%a %F" zonedTime)
@@ -27,7 +27,7 @@ dateBlockProducer barUpdateChannel = do
   lift $ void $ forkIO $ update output
   fromInput input
   where
-    update :: Output Block -> IO ()
+    update :: Output BlockOutput -> IO ()
     update output = do
       sleepUntil =<< nextMinute
       block <- dateBlock
