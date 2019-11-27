@@ -14,7 +14,7 @@ mkfifo $STDERR
 
 trap "swaymsg bar $SWAY_BAR_ID status_command $DEFAULT_BAR_COMMAND; rm -rf $TEMP_DIR" EXIT INT HUP TERM
 
-swaymsg bar $SWAY_BAR_ID status_command "exec $(stack path --local-install-root)/bin/$EXECUTABLE_NAME -- server 2> $STDERR"
+swaymsg bar $SWAY_BAR_ID status_command "exec $(stack path --local-install-root)/bin/$EXECUTABLE_NAME $@ -- server 2> $STDERR"
 
 # show output and run forever (use Ctrl-C to stop)
 cat $STDERR
