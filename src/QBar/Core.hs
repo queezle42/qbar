@@ -44,8 +44,30 @@ $(deriveJSON defaultOptions ''Click)
 
 type BlockProducer = Producer BlockOutput IO ()
 
+-- |Block that 'yield's an update whenever the block should be changed
+newtype PushBlockProducer = PushBlockProducer BlockProducer
+-- |Block that generates an update on 'yield'. Should only be pulled when an update is required.
+newtype PullBlockProducer = PullBlockProducer BlockProducer
+-- |Cached block. Always 'yield's the latest update, so it should only be pulled when the bar is rendered.
+newtype CachedBlockProducer = CachedBlockProducer BlockProducer
+
+-- |Generic block type that can be a block in pull-, push- or cached mode.
+data Block = PushBlock PushBlockProducer
+  | PullBlock PullBlockProducer
+  | CachedBlock CachedBlockProducer
+
 data BarUpdateChannel = BarUpdateChannel (IO ())
 type BarUpdateEvent = Event.Event
+
+pushBlock :: BlockProducer -> Block
+pushBlock = PushBlock . PushBlockProducer
+
+pullBlock :: BlockProducer -> Block
+pullBlock = PullBlock . PullBlockProducer
+
+cachedBlock :: BlockProducer -> Block
+cachedBlock = CachedBlock . CachedBlockProducer
+
 
 defaultColor :: T.Text
 defaultColor = "#969896"
@@ -263,3 +285,24 @@ pangoColor (RGB r g b) =
 
 updateBar :: BarUpdateChannel -> IO ()
 updateBar (BarUpdateChannel updateAction) = updateAction
+
+cachePushBlock :: BarUpdateChannel -> PushBlockProducer -> CachedBlockProducer
+cachePushBlock barUpdateChannel (PushBlockProducer blockProducer) = CachedBlockProducer $
+  lift (next blockProducer) >>= either (lift . return) withInitialBlock
+  where
+    withInitialBlock :: (BlockOutput, BlockProducer) -> BlockProducer
+    withInitialBlock (initialBlockOutput, blockProducer') = do
+      (output, input, seal) <- lift $ spawn' $ latest initialBlockOutput
+      -- The async could be used to stop the block later, but for now we are just linking it to catch exceptions
+      lift $ link =<< async (sendProducerToMailbox output seal blockProducer')
+      fromInput input
+    sendProducerToMailbox :: Output BlockOutput -> STM () -> BlockProducer -> IO ()
+    sendProducerToMailbox output seal blockProducer' = do
+      runEffect $ for blockProducer' (sendOutputToMailbox output)
+      atomically seal
+    sendOutputToMailbox :: Output BlockOutput -> BlockOutput -> Effect IO ()
+    sendOutputToMailbox output blockOutput = lift $ do
+      -- The void discarding the boolean result that indicates if the mailbox is sealed
+      -- This is ok because right now once started a cached block never stops generating output and the mailbox is never sealed
+      atomically $ void $ send output blockOutput
+      updateBar barUpdateChannel

@@ -168,7 +168,7 @@ runBarConfiguration generateBarConfig options = do
   putStrLn "{\"version\":1,\"click_events\":true}"
   putStrLn "["
 
-  date <- dateBlock
+  date <- dateBlockOutput
   let initialBlocks = [date]
 
   -- Attach spinner indicator when verbose flag is set
