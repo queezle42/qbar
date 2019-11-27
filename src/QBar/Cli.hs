@@ -16,6 +16,7 @@ barCommandParser = hsubparser
 
 data MainOptions = MainOptions {
   verbose :: Bool,
+  indicator :: Bool,
   socketLocation :: Maybe T.Text,
   barCommand :: BarCommand
 }
@@ -23,9 +24,10 @@ data MainOptions = MainOptions {
 mainOptionsParser :: Parser MainOptions
 mainOptionsParser = do
   verbose <- switch $ long "verbose" <> short 'v' <> help "Print more diagnostic output to stderr (including a copy of every bar update)."
+  indicator <- switch $ long "indicator" <> short 'i' <> help "Show render indicator."
   socketLocation <- optional $ strOption $ long "socket" <> short 's' <> metavar "SOCKET" <> help "Control socket location. By default determined by WAYLAND_SOCKET location."
   barCommand <- barCommandParser
-  return MainOptions {verbose, socketLocation, barCommand}
+  return MainOptions {verbose, indicator, socketLocation, barCommand}
 
 parser :: ParserInfo MainOptions
 parser = info (mainOptionsParser <**> helper)

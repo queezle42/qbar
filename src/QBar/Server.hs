@@ -172,7 +172,7 @@ runBarConfiguration generateBarConfig options = do
   let initialBlocks = [date]
 
   -- Attach spinner indicator when verbose flag is set
-  let initialBlocks' = if verbose options then initialBlocks <> [createBlock "*"] else initialBlocks
+  let initialBlocks' = if indicator options then initialBlocks <> [createBlock "*"] else initialBlocks
 
   -- Render initial time block so the bar is not empty after startup
   initialOutput <- renderLine options handle initialBlockFilter initialBlocks' ""
@@ -182,7 +182,7 @@ runBarConfiguration generateBarConfig options = do
   blockProducers <- generateBarConfig barUpdateChannel
 
   -- Attach spinner indicator when verbose flag is set
-  let blockProducers' = if verbose options then blockProducers <> [renderIndicator] else blockProducers
+  let blockProducers' = if indicator options then  (renderIndicator:blockProducers) else blockProducers
 
   -- Create channel to send new block producers to render loop
   newBlockProducers <- newTChanIO
