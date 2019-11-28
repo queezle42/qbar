@@ -53,7 +53,7 @@ newtype CachedBlockProducer = CachedBlockProducer BlockProducer
 
 -- |Generic block type that can be a block in pull-, push- or cached mode.
 data Block = PushBlock PushBlockProducer
-  | PullBlock PullBlockProducer
+  -- | PullBlock PullBlockProducer
   | CachedBlock CachedBlockProducer
 
 data BarUpdateChannel = BarUpdateChannel (IO ())
@@ -62,11 +62,14 @@ type BarUpdateEvent = Event.Event
 pushBlock :: BlockProducer -> Block
 pushBlock = PushBlock . PushBlockProducer
 
-pullBlock :: BlockProducer -> Block
-pullBlock = PullBlock . PullBlockProducer
+--pullBlock :: BlockProducer -> Block
+--pullBlock = PullBlock . PullBlockProducer
 
 cachedBlock :: BlockProducer -> Block
 cachedBlock = CachedBlock . CachedBlockProducer
+
+pullBlockProducer :: BlockProducer -> PullBlockProducer
+pullBlockProducer = PullBlockProducer
 
 
 defaultColor :: T.Text
@@ -168,9 +171,9 @@ autoPadding = autoPadding' 0 0
 
 -- | Create a shared interval. Takes a BarUpdateChannel to signal bar updates and an interval (in seconds).Data.Maybe
 -- Returns an IO action that can be used to attach blocks to the shared interval and an async that contains a reference to the scheduler thread.
-sharedInterval :: BarUpdateChannel -> Int -> IO (IO BlockOutput -> BlockProducer, Async ())
+sharedInterval :: BarUpdateChannel -> Int -> IO (PullBlockProducer -> BlockProducer, Async ())
 sharedInterval barUpdateChannel seconds = do
-  clientsMVar <- newMVar ([] :: [(IO BlockOutput, Output BlockOutput)])
+  clientsMVar <- newMVar ([] :: [(MVar PullBlockProducer, Output BlockOutput)])
 
   task <- async $ forever $ do
     threadDelay $ seconds * 1000000
@@ -182,16 +185,25 @@ sharedInterval barUpdateChannel seconds = do
 
   return (addClient clientsMVar, task)
     where
-      runAndFilterClient :: (IO BlockOutput, Output BlockOutput) -> IO (Maybe (IO BlockOutput, Output BlockOutput))
+      runAndFilterClient :: (MVar PullBlockProducer, Output BlockOutput) -> IO (Maybe (MVar PullBlockProducer, Output BlockOutput))
       runAndFilterClient client = do
         result <- runClient client
         return $ if result then Just client else Nothing
-      runClient :: (IO BlockOutput, Output BlockOutput) -> IO Bool
-      runClient (blockAction, output) = do
-        result <- blockAction
-        atomically $ send output result {
-          clickAction = Just (updateClickHandler result)
-        }
+      runClient :: (MVar PullBlockProducer, Output BlockOutput) -> IO Bool
+      runClient (blockProducerMVar, output) =
+        modifyMVar blockProducerMVar $ \(PullBlockProducer blockProducer) -> do
+          result <- next blockProducer
+          case result of
+            Left () -> return (PullBlockProducer $ return (), False)
+            Right (blockOutput, blockProducer') -> do
+              success <- atomically $ send output blockOutput {
+                clickAction = Just (updateClickHandler blockOutput)
+              }
+              if success
+                -- store new BlockProducer back into MVar
+                then return (pullBlockProducer blockProducer', True)
+                -- mailbox is closed, stop running producer
+                else return (PullBlockProducer $ return (), False)
         where
           updateClickHandler :: BlockOutput -> Click -> IO ()
           updateClickHandler block _ = do
@@ -201,36 +213,40 @@ sharedInterval barUpdateChannel seconds = do
             -- Notify bar about changed block state to display the feedback
             updateBar barUpdateChannel
             -- Run a normal block update to update the block to the new value
-            void $ runClient (blockAction, output)
+            void $ runClient (blockProducerMVar, output)
             -- Notify bar about changed block state, this is usually done by the shared interval handler
             updateBar barUpdateChannel
-      addClient :: MVar [(IO BlockOutput, Output BlockOutput)] -> IO BlockOutput -> BlockProducer
-      addClient clientsMVar blockAction = do
+      addClient :: MVar [(MVar PullBlockProducer, Output BlockOutput)] -> PullBlockProducer -> BlockProducer
+      addClient clientsMVar blockProducer = do
         -- Spawn the mailbox that preserves the latest block
         (output, input) <- lift $ spawn $ latest emptyBlock
 
+        blockProducerMVar <- lift $ newMVar blockProducer
+
         -- Generate initial block and send it to the mailbox
-        lift $ void $ runClient (blockAction, output)
+        lift $ void $ runClient (blockProducerMVar, output)
 
         -- Register the client for regular updates
-        lift $ modifyMVar_ clientsMVar $ \ clients -> return ((blockAction, output):clients)
+        lift $ modifyMVar_ clientsMVar $ \ clients -> return ((blockProducerMVar, output):clients)
 
         -- Return a block producer from the mailbox
         fromInput input
 
-blockScript :: FilePath -> IO BlockOutput
-blockScript path = do
-  -- The exit code is used for i3blocks signaling but ignored here (=not implemented)
-  -- I am trying to replace i3blocks scripts with native haskell blocks, so I do not need it
-  (exitCode, output) <- readProcessStdout $ shell path
-  case exitCode of
-    ExitSuccess -> return $ case map E.decodeUtf8 (C8.lines output) of
-      (text:short:color:_) -> setColor color $ shortText short $ createScriptBlock text
-      (text:short:_) -> shortText short $ createScriptBlock text
-      (text:_) -> createScriptBlock text
-      [] -> createScriptBlock "-"
-    (ExitFailure nr) -> return $ createErrorBlock $ "[" <> (T.pack $ show nr) <> "]"
+blockScript :: FilePath -> PullBlockProducer
+blockScript path = pullBlockProducer $ forever $ yield =<< (lift $ blockScriptAction)
   where
+    blockScriptAction :: IO BlockOutput
+    blockScriptAction = do
+      -- The exit code is used for i3blocks signaling but ignored here (=not implemented)
+      -- I am trying to replace i3blocks scripts with native haskell blocks, so I do not need it
+      (exitCode, output) <- readProcessStdout $ shell path
+      case exitCode of
+        ExitSuccess -> return $ case map E.decodeUtf8 (C8.lines output) of
+          (text:short:color:_) -> setColor color $ shortText short $ createScriptBlock text
+          (text:short:_) -> shortText short $ createScriptBlock text
+          (text:_) -> createScriptBlock text
+          [] -> createScriptBlock "-"
+        (ExitFailure nr) -> return $ createErrorBlock $ "[" <> (T.pack $ show nr) <> "]"
     createScriptBlock :: T.Text -> BlockOutput
     createScriptBlock text = pangoMarkup $ setBlockName (T.pack path) $ createBlock text
 
