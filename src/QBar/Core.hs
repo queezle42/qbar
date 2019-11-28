@@ -200,9 +200,9 @@ sharedInterval barUpdateChannel seconds = do
                 clickAction = Just (updateClickHandler blockOutput)
               }
               if success
-                -- store new BlockProducer back into MVar
+                -- Store new BlockProducer back into MVar
                 then return (pullBlockProducer blockProducer', True)
-                -- mailbox is closed, stop running producer
+                -- Mailbox is sealed, stop running producer
                 else return (PullBlockProducer $ return (), False)
         where
           updateClickHandler :: BlockOutput -> Click -> IO ()
