@@ -320,8 +320,8 @@ cachePushBlock barUpdateChannel (PushBlockProducer blockProducer) = CachedBlockP
       atomically seal
     sendOutputToMailbox :: Output BlockOutput -> BlockOutput -> Effect IO ()
     sendOutputToMailbox output blockOutput = lift $ do
-      -- The void discarding the boolean result that indicates if the mailbox is sealed
-      -- This is ok because right now once started a cached block never stops generating output and the mailbox is never sealed
+      -- The void is discarding the boolean result that indicates if the mailbox is sealed
+      -- This is ok because a cached block is never sealed from the receiving side
       atomically $ void $ send output blockOutput
       updateBar barUpdateChannel
 
@@ -329,6 +329,7 @@ blockToCachedBlockProducer :: BarUpdateChannel -> Block -> CachedBlockProducer
 blockToCachedBlockProducer barUpdateChannel (PushBlock pushBlockProducer) = cachePushBlock barUpdateChannel pushBlockProducer
 blockToCachedBlockProducer _ (CachedBlock cachedBlockProducer) = cachedBlockProducer
 
+-- |The '>!>'-operator can be used to apply a 'Pipe' to the 'BlockProducer' contained in the 'Block'.
 (>!>) :: Block -> Pipe BlockOutput BlockOutput IO () -> Block
 (>!>) (PushBlock (PushBlockProducer blockProducer)) pipe = pushBlock $ (blockProducer >-> pipe)
 (>!>) (CachedBlock (CachedBlockProducer blockProducer)) pipe = cachedBlock $ (blockProducer >-> pipe)
