@@ -32,29 +32,32 @@ data Handle = Handle {
   handleActiveFilter :: IORef Filter
 }
 
-renderIndicator :: BlockProducer
-renderIndicator = forever $ each $ map createBlock ["/", "-", "\\", "|"]
+renderIndicator :: Block
+-- Using 'cachedBlock' is a hack to actually get the block to update on every bar update (by doing this it will not get a cache later in the pipeline).
+renderIndicator = cachedBlock $ forever $ each $ map createBlock ["/", "-", "\\", "|"]
 
-runBlock :: BlockProducer -> IO (Maybe (BlockOutput, BlockProducer))
-runBlock producer = do
+runBlock :: CachedBlockProducer -> IO (Maybe (BlockOutput, CachedBlockProducer))
+runBlock (CachedBlockProducer producer) = do
   next' <- next producer
   return $ case next' of
     Left _ -> Nothing
-    Right (block, newProducer) -> Just (block, newProducer)
+    Right (block, newProducer) -> Just (block, CachedBlockProducer newProducer)
 
-runBlocks :: [BlockProducer] -> IO ([BlockOutput], [BlockProducer])
+runBlocks :: [CachedBlockProducer] -> IO ([BlockOutput], [CachedBlockProducer])
 runBlocks blockProducers = unzip . catMaybes <$> mapM runBlock blockProducers
 
-renderLoop :: MainOptions -> Handle -> BarUpdateEvent -> BS.ByteString -> TChan BlockProducer -> IO ()
-renderLoop options handle@Handle{handleActiveFilter} barUpdateEvent previousBarOutput newBlockProducers = renderLoop' previousBarOutput []
+renderLoop :: MainOptions -> Handle -> BarUpdateChannel -> BarUpdateEvent -> BS.ByteString -> TChan Block -> IO ()
+renderLoop options handle@Handle{handleActiveFilter} barUpdateChannel barUpdateEvent previousBarOutput newBlockChan = renderLoop' previousBarOutput []
   where
-    addNewBlockProducers :: [BlockProducer] -> IO [BlockProducer]
+    addNewBlockProducers :: [CachedBlockProducer] -> IO [CachedBlockProducer]
     addNewBlockProducers blockProducers = do
-      maybeNewBlockProducer <- atomically $ tryReadTChan newBlockProducers
-      case maybeNewBlockProducer of
+      maybeNewBlock <- atomically $ tryReadTChan newBlockChan
+      case maybeNewBlock of
         Nothing -> return blockProducers
-        Just newBlockProducer -> addNewBlockProducers (newBlockProducer:blockProducers)
-    renderLoop' :: BS.ByteString -> [BlockProducer] -> IO ()
+        Just newBlock -> do
+          let newCachedBlockProducer = blockToCachedBlockProducer barUpdateChannel newBlock
+          addNewBlockProducers (newCachedBlockProducer:blockProducers)
+    renderLoop' :: BS.ByteString -> [CachedBlockProducer] -> IO ()
     renderLoop' previousBarOutput' blockProducers = do
       blockProducers' <- addNewBlockProducers blockProducers
 
@@ -149,7 +152,7 @@ installSignalHandlers barUpdateChannel = void $ installHandler sigCONT (Catch si
       hPutStrLn stderr "SIGCONT received"
       updateBar barUpdateChannel
 
-runBarConfiguration :: (BarUpdateChannel -> IO [BlockProducer]) -> MainOptions -> IO ()
+runBarConfiguration :: (BarUpdateChannel -> IO [Block]) -> MainOptions -> IO ()
 runBarConfiguration generateBarConfig options = do
   -- Create IORef for mouse click callbacks
   actionList <- newIORef []
@@ -206,7 +209,7 @@ runBarConfiguration generateBarConfig options = do
     updateBar barUpdateChannel
   link socketUpdateAsync
 
-  renderLoop options handle barUpdateEvent initialOutput newBlockProducers
+  renderLoop options handle barUpdateChannel barUpdateEvent initialOutput newBlockProducers
 
 createCommandChan :: IO CommandChan
 createCommandChan = newTChanIO

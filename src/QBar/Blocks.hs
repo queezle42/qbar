@@ -9,7 +9,6 @@ import qualified Data.Text.Lazy as T
 import Data.Time.Format
 import Data.Time.LocalTime
 import Pipes
-import Pipes.Concurrent
 
 dateBlock :: Block
 dateBlock = pushBlock producer
@@ -26,18 +25,3 @@ dateBlockOutput = do
   let time = T.pack (formatTime defaultTimeLocale "%R" zonedTime)
   let text = (T.pack "📅 ") <> date <> " " <> (coloredText activeColor time)
   return $ setBlockName "date" $ pangoMarkup $ createBlock text
-
-dateBlockProducer :: BarUpdateChannel -> BlockProducer
-dateBlockProducer barUpdateChannel = do
-  initialDateBlock <- lift dateBlockOutput
-  (output, input) <- lift $ spawn $ latest initialDateBlock
-  lift $ void $ forkIO $ update output
-  fromInput input
-  where
-    update :: Output BlockOutput -> IO ()
-    update output = do
-      sleepUntil =<< nextMinute
-      block <- dateBlockOutput
-      void $ atomically $ send output block
-      updateBar barUpdateChannel
-      update output

@@ -171,7 +171,7 @@ autoPadding = autoPadding' 0 0
 
 -- | Create a shared interval. Takes a BarUpdateChannel to signal bar updates and an interval (in seconds).Data.Maybe
 -- Returns an IO action that can be used to attach blocks to the shared interval and an async that contains a reference to the scheduler thread.
-sharedInterval :: BarUpdateChannel -> Int -> IO (PullBlockProducer -> BlockProducer, Async ())
+sharedInterval :: BarUpdateChannel -> Int -> IO (PullBlockProducer -> Block, Async ())
 sharedInterval barUpdateChannel seconds = do
   clientsMVar <- newMVar ([] :: [(MVar PullBlockProducer, Output BlockOutput)])
 
@@ -216,8 +216,8 @@ sharedInterval barUpdateChannel seconds = do
             void $ runClient (blockProducerMVar, output)
             -- Notify bar about changed block state, this is usually done by the shared interval handler
             updateBar barUpdateChannel
-      addClient :: MVar [(MVar PullBlockProducer, Output BlockOutput)] -> PullBlockProducer -> BlockProducer
-      addClient clientsMVar blockProducer = do
+      addClient :: MVar [(MVar PullBlockProducer, Output BlockOutput)] -> PullBlockProducer -> Block
+      addClient clientsMVar blockProducer = cachedBlock $ do
         -- Spawn the mailbox that preserves the latest block
         (output, input) <- lift $ spawn $ latest emptyBlock
 
@@ -250,8 +250,10 @@ blockScript path = pullBlockProducer $ forever $ yield =<< (lift $ blockScriptAc
     createScriptBlock :: T.Text -> BlockOutput
     createScriptBlock text = pangoMarkup $ setBlockName (T.pack path) $ createBlock text
 
-startPersistentBlockScript :: BarUpdateChannel -> FilePath -> Producer BlockOutput IO ()
-startPersistentBlockScript barUpdateChannel path = do
+startPersistentBlockScript :: BarUpdateChannel -> FilePath -> Block
+-- This is only using 'cachedBlock' because the code was already written and tested
+-- This could probably be massively simplified by using the new 'pushBlock'
+startPersistentBlockScript barUpdateChannel path = cachedBlock $ do
   (output, input, seal) <- lift $ spawn' $ latest $ emptyBlock
   initialDataEvent <- lift $ Event.new
   task <- lift $ async $ do
@@ -322,3 +324,11 @@ cachePushBlock barUpdateChannel (PushBlockProducer blockProducer) = CachedBlockP
       -- This is ok because right now once started a cached block never stops generating output and the mailbox is never sealed
       atomically $ void $ send output blockOutput
       updateBar barUpdateChannel
+
+blockToCachedBlockProducer :: BarUpdateChannel -> Block -> CachedBlockProducer
+blockToCachedBlockProducer barUpdateChannel (PushBlock pushBlockProducer) = cachePushBlock barUpdateChannel pushBlockProducer
+blockToCachedBlockProducer _ (CachedBlock cachedBlockProducer) = cachedBlockProducer
+
+(>!>) :: Block -> Pipe BlockOutput BlockOutput IO () -> Block
+(>!>) (PushBlock (PushBlockProducer blockProducer)) pipe = pushBlock $ (blockProducer >-> pipe)
+(>!>) (CachedBlock (CachedBlockProducer blockProducer)) pipe = cachedBlock $ (blockProducer >-> pipe)
