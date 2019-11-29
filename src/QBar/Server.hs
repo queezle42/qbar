@@ -59,8 +59,6 @@ renderLoop options handle@Handle{handleActiveFilter} barUpdateChannel barUpdateE
           addNewBlockProducers (newCachedBlockProducer:blockProducers)
     renderLoop' :: BS.ByteString -> [CachedBlockProducer] -> IO ()
     renderLoop' previousBarOutput' blockProducers = do
-      blockProducers' <- addNewBlockProducers blockProducers
-
       blockFilter <- readIORef handleActiveFilter
 
       -- Wait for an event (unless the filter is animated)
@@ -69,6 +67,8 @@ renderLoop options handle@Handle{handleActiveFilter} barUpdateChannel barUpdateE
       -- Wait for 10ms after first events to catch (almost-)simultaneous event updates
       threadDelay 10000
       Event.clear barUpdateEvent
+
+      blockProducers' <- addNewBlockProducers blockProducers
 
       (blocks, blockProducers'') <- runBlocks blockProducers'
 
