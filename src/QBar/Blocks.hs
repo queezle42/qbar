@@ -10,13 +10,11 @@ import Data.Time.Format
 import Data.Time.LocalTime
 import Pipes
 
-dateBlock :: Block
-dateBlock = pushBlock producer
-  where
-    producer = do
-      yield =<< lift dateBlockOutput
-      lift $ sleepUntil =<< nextMinute
-      producer
+dateBlock :: PushBlock
+dateBlock = do
+  yield =<< lift dateBlockOutput
+  lift $ sleepUntil =<< nextMinute
+  dateBlock
 
 dateBlockOutput :: IO BlockOutput
 dateBlockOutput = do

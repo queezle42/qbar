@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 module QBar.Core where
@@ -41,34 +42,40 @@ data Click = Click {
 } deriving Show
 $(deriveJSON defaultOptions ''Click)
 
-type BlockProducer = Producer BlockOutput IO ()
+data PushMode = PushMode
+data PullMode = PullMode
+data CachedMode = CachedMode
+
 
 -- |Block that 'yield's an update whenever the block should be changed
-newtype PushBlockProducer = PushBlockProducer BlockProducer
+type PushBlock = PushBlockProducer
+type PushBlockProducer = Producer BlockOutput IO PushMode
 -- |Block that generates an update on 'yield'. Should only be pulled when an update is required.
-newtype PullBlockProducer = PullBlockProducer BlockProducer
+type PullBlock = PullBlockProducer
+type PullBlockProducer = Producer BlockOutput IO PullMode
 -- |Cached block. Always 'yield's the latest update, so it should only be pulled when the bar is rendered.
-newtype CachedBlockProducer = CachedBlockProducer BlockProducer
+type CachedBlock = CachedBlockProducer
+type CachedBlockProducer = Producer BlockOutput IO CachedMode
 
--- |Generic block type that can be a block in pull-, push- or cached mode.
-data Block = PushBlock PushBlockProducer
-  -- | PullBlock PullBlockProducer
-  | CachedBlock CachedBlockProducer
+class IsBlock a where
+  toCachedBlock :: BarUpdateChannel -> a -> CachedBlock
+instance IsBlock PushBlock where
+  toCachedBlock = cachePushBlock
+instance IsBlock CachedBlock where
+  toCachedBlock _ = id
+
+class IsBlockMode a where
+  exitBlock :: Producer BlockOutput IO a
+instance IsBlockMode PushMode where
+  exitBlock = return PushMode
+instance IsBlockMode PullMode where
+  exitBlock = return PullMode
+instance IsBlockMode CachedMode where
+  exitBlock = return CachedMode
+
 
 data BarUpdateChannel = BarUpdateChannel (IO ())
 type BarUpdateEvent = Event.Event
-
-pushBlock :: BlockProducer -> Block
-pushBlock = PushBlock . PushBlockProducer
-
---pullBlock :: BlockProducer -> Block
---pullBlock = PullBlock . PullBlockProducer
-
-cachedBlock :: BlockProducer -> Block
-cachedBlock = CachedBlock . CachedBlockProducer
-
-pullBlockProducer :: BlockProducer -> PullBlockProducer
-pullBlockProducer = PullBlockProducer
 
 
 defaultColor :: T.Text
@@ -151,13 +158,13 @@ removePango block
         Left _ -> text
         Right parsed -> removeFormatting parsed
 
-modify :: (BlockOutput -> BlockOutput) -> Pipe BlockOutput BlockOutput IO ()
+modify :: (BlockOutput -> BlockOutput) -> Pipe BlockOutput BlockOutput IO r
 modify = PP.map
 
-autoPadding :: Pipe BlockOutput BlockOutput IO ()
+autoPadding :: Pipe BlockOutput BlockOutput IO r
 autoPadding = autoPadding' 0 0
   where
-    autoPadding' :: Int64 -> Int64 -> Pipe BlockOutput BlockOutput IO ()
+    autoPadding' :: Int64 -> Int64 -> Pipe BlockOutput BlockOutput IO r
     autoPadding' fullLength shortLength = do
       block <- await
       let values' = (values block)
@@ -168,9 +175,12 @@ autoPadding = autoPadding' 0 0
       yield block { values = values''' }
       autoPadding' (max fullLength fullLength') (max shortLength shortLength')
 
+cacheFromInput :: Input BlockOutput -> CachedBlock
+cacheFromInput input = fmap (\_ -> CachedMode) $ fromInput input
+
 -- | Create a shared interval. Takes a BarUpdateChannel to signal bar updates and an interval (in seconds).Data.Maybe
 -- Returns an IO action that can be used to attach blocks to the shared interval and an async that contains a reference to the scheduler thread.
-sharedInterval :: BarUpdateChannel -> Int -> IO (PullBlockProducer -> Block, Async ())
+sharedInterval :: BarUpdateChannel -> Int -> IO (PullBlock -> CachedBlock, Async ())
 sharedInterval barUpdateChannel seconds = do
   clientsMVar <- newMVar ([] :: [(MVar PullBlockProducer, Output BlockOutput)])
 
@@ -190,19 +200,19 @@ sharedInterval barUpdateChannel seconds = do
         return $ if result then Just client else Nothing
       runClient :: (MVar PullBlockProducer, Output BlockOutput) -> IO Bool
       runClient (blockProducerMVar, output) =
-        modifyMVar blockProducerMVar $ \(PullBlockProducer blockProducer) -> do
+        modifyMVar blockProducerMVar $ \blockProducer -> do
           result <- next blockProducer
           case result of
-            Left () -> return (PullBlockProducer $ return (), False)
+            Left _ -> return (exitBlock, False)
             Right (blockOutput, blockProducer') -> do
               success <- atomically $ send output blockOutput {
                 clickAction = Just (updateClickHandler blockOutput)
               }
               if success
                 -- Store new BlockProducer back into MVar
-                then return (pullBlockProducer blockProducer', True)
+                then return (blockProducer', True)
                 -- Mailbox is sealed, stop running producer
-                else return (PullBlockProducer $ return (), False)
+                else return (exitBlock, False)
         where
           updateClickHandler :: BlockOutput -> Click -> IO ()
           updateClickHandler block _ = do
@@ -215,8 +225,8 @@ sharedInterval barUpdateChannel seconds = do
             void $ runClient (blockProducerMVar, output)
             -- Notify bar about changed block state, this is usually done by the shared interval handler
             updateBar barUpdateChannel
-      addClient :: MVar [(MVar PullBlockProducer, Output BlockOutput)] -> PullBlockProducer -> Block
-      addClient clientsMVar blockProducer = cachedBlock $ do
+      addClient :: MVar [(MVar PullBlockProducer, Output BlockOutput)] -> PullBlockProducer -> CachedBlock
+      addClient clientsMVar blockProducer = do
         -- Spawn the mailbox that preserves the latest block
         (output, input) <- lift $ spawn $ latest emptyBlock
 
@@ -229,10 +239,10 @@ sharedInterval barUpdateChannel seconds = do
         lift $ modifyMVar_ clientsMVar $ \ clients -> return ((blockProducerMVar, output):clients)
 
         -- Return a block producer from the mailbox
-        fromInput input
+        cacheFromInput input
 
-blockScript :: FilePath -> PullBlockProducer
-blockScript path = pullBlockProducer $ forever $ yield =<< (lift $ blockScriptAction)
+blockScript :: FilePath -> PullBlock
+blockScript path = forever $ yield =<< (lift $ blockScriptAction)
   where
     blockScriptAction :: IO BlockOutput
     blockScriptAction = do
@@ -249,10 +259,10 @@ blockScript path = pullBlockProducer $ forever $ yield =<< (lift $ blockScriptAc
     createScriptBlock :: T.Text -> BlockOutput
     createScriptBlock text = pangoMarkup $ setBlockName (T.pack path) $ createBlock text
 
-startPersistentBlockScript :: BarUpdateChannel -> FilePath -> Block
--- This is only using 'cachedBlock' because the code was already written and tested
+startPersistentBlockScript :: BarUpdateChannel -> FilePath -> CachedBlock
+-- This is only using 'CachedBlock' because the code was already written and tested
 -- This could probably be massively simplified by using the new 'pushBlock'
-startPersistentBlockScript barUpdateChannel path = cachedBlock $ do
+startPersistentBlockScript barUpdateChannel path = do
   (output, input, seal) <- lift $ spawn' $ latest $ emptyBlock
   initialDataEvent <- lift $ Event.new
   task <- lift $ async $ do
@@ -271,7 +281,7 @@ startPersistentBlockScript barUpdateChannel path = cachedBlock $ do
       (atomically seal)
   lift $ link task
   lift $ Event.wait initialDataEvent
-  fromInput input
+  cacheFromInput input
   where
     signalFirstBlock :: Event.Event -> Pipe BlockOutput BlockOutput IO ()
     signalFirstBlock event = do
@@ -303,19 +313,19 @@ pangoColor (RGB r g b) =
 updateBar :: BarUpdateChannel -> IO ()
 updateBar (BarUpdateChannel updateAction) = updateAction
 
-cachePushBlock :: BarUpdateChannel -> PushBlockProducer -> CachedBlockProducer
-cachePushBlock barUpdateChannel (PushBlockProducer blockProducer) = CachedBlockProducer $
-  lift (next blockProducer) >>= either (lift . return) withInitialBlock
+cachePushBlock :: BarUpdateChannel -> PushBlock -> CachedBlock
+cachePushBlock barUpdateChannel pushBlock =
+  lift (next pushBlock) >>= either (\_ -> exitBlock) withInitialBlock
   where
-    withInitialBlock :: (BlockOutput, BlockProducer) -> BlockProducer
-    withInitialBlock (initialBlockOutput, blockProducer') = do
+    withInitialBlock :: (BlockOutput, PushBlock) -> CachedBlock
+    withInitialBlock (initialBlockOutput, pushBlock') = do
       (output, input, seal) <- lift $ spawn' $ latest $ Just initialBlockOutput
       -- The async could be used to stop the block later, but for now we are just linking it to catch exceptions
-      lift $ link =<< async (sendProducerToMailbox output seal blockProducer')
+      lift $ link =<< async (sendProducerToMailbox output seal pushBlock')
       terminateOnMaybe $ fromInput input
-    sendProducerToMailbox :: Output (Maybe BlockOutput) -> STM () -> BlockProducer -> IO ()
-    sendProducerToMailbox output seal blockProducer' = do
-      runEffect $ for blockProducer' (sendOutputToMailbox output)
+    sendProducerToMailbox :: Output (Maybe BlockOutput) -> STM () -> PushBlock -> IO ()
+    sendProducerToMailbox output seal pushBlock' = do
+      void $ runEffect $ for pushBlock' (sendOutputToMailbox output)
       atomically $ void $ send output Nothing
       updateBar barUpdateChannel
       atomically seal
@@ -325,19 +335,9 @@ cachePushBlock barUpdateChannel (PushBlockProducer blockProducer) = CachedBlockP
       -- This is ok because a cached block is never sealed from the receiving side
       atomically $ void $ send output $ Just blockOutput
       updateBar barUpdateChannel
-    terminateOnMaybe :: Producer (Maybe a) IO () -> Producer a IO ()
+    terminateOnMaybe :: Producer (Maybe BlockOutput) IO () -> Producer BlockOutput IO CachedMode
     terminateOnMaybe p = do
       eitherMaybeValue <- lift $ next p
       case eitherMaybeValue of
         Right (Just value, newP) -> yield value >> terminateOnMaybe newP
-        _ -> return ()
-
-
-blockToCachedBlockProducer :: BarUpdateChannel -> Block -> CachedBlockProducer
-blockToCachedBlockProducer barUpdateChannel (PushBlock pushBlockProducer) = cachePushBlock barUpdateChannel pushBlockProducer
-blockToCachedBlockProducer _ (CachedBlock cachedBlockProducer) = cachedBlockProducer
-
--- |The '>!>'-operator can be used to apply a 'Pipe' to the 'BlockProducer' contained in the 'Block'.
-(>!>) :: Block -> Pipe BlockOutput BlockOutput IO () -> Block
-(>!>) (PushBlock (PushBlockProducer blockProducer)) pipe = pushBlock $ (blockProducer >-> pipe)
-(>!>) (CachedBlock (CachedBlockProducer blockProducer)) pipe = cachedBlock $ (blockProducer >-> pipe)
+        _ -> exitBlock
