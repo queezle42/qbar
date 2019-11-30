@@ -212,3 +212,11 @@ runBarConfiguration generateBarConfig options = do
 
 createCommandChan :: IO CommandChan
 createCommandChan = newTChanIO
+
+-- |Entry point.
+runQBar :: BarConfiguration -> MainOptions -> IO ()
+runQBar barConfiguration options@MainOptions{barCommand} = runCommand barCommand
+  where
+    runCommand BarServer = runBarConfiguration barConfiguration options
+    runCommand NoFilter = sendIpc options $ SetFilter $ StaticFilter None
+    runCommand RainbowFilter = sendIpc options $ SetFilter $ AnimatedFilter Rainbow

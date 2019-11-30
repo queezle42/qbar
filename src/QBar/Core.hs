@@ -78,6 +78,9 @@ data BarUpdateChannel = BarUpdateChannel (IO ())
 type BarUpdateEvent = Event.Event
 
 
+type BarConfiguration = BarUpdateChannel -> Producer CachedBlock IO ()
+
+
 defaultColor :: T.Text
 defaultColor = "#969896"
 
