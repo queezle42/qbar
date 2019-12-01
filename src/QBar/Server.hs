@@ -8,28 +8,28 @@ import QBar.Cli
 import QBar.ControlSocket
 import QBar.Filter
 
-import Control.Monad (forever, when, unless, forM_)
+import Control.Monad (forever, when, unless)
+import Control.Monad.Reader (runReaderT, ask)
 import Control.Monad.STM (atomically)
 import Control.Concurrent (threadDelay, forkFinally)
 import Control.Concurrent.Async
 import Control.Concurrent.Event as Event
-import Control.Concurrent.STM.TChan (TChan, newTChanIO, readTChan, writeTChan, tryReadTChan)
+import Control.Concurrent.STM.TChan (TChan, newTChanIO, readTChan, tryReadTChan)
 import Data.Aeson (encode, decode)
 import Data.ByteString.Lazy (hPut)
 import qualified Data.ByteString.Char8 as BSSC8
 import qualified Data.ByteString.Lazy as BS
 import qualified Data.ByteString.Lazy.Char8 as C8
 import Data.IORef
-import Data.Maybe (isJust, fromJust, fromMaybe, catMaybes, mapMaybe)
+import Data.Maybe (isJust, fromJust, catMaybes, mapMaybe)
 import qualified Data.Text.Lazy as T
 import Data.Time.Clock.POSIX
 import Pipes
-import Pipes.Prelude (toListM)
 import System.IO (stdin, stdout, stderr, hFlush, hPutStrLn)
 import System.Posix.Signals
 
 data Handle = Handle {
-  handleActionList :: IORef [(T.Text, Click -> IO ())],
+  handleActionList :: IORef [(T.Text, Click -> BarIO ())],
   handleActiveFilter :: IORef Filter
 }
 
@@ -101,9 +101,9 @@ renderLine MainOptions{verbose} Handle{handleActionList} blockFilter blocks prev
 
   return encodedOutput
   where
-    clickActionList :: [(T.Text, Click -> IO ())]
+    clickActionList :: [(T.Text, Click -> BarIO ())]
     clickActionList = mapMaybe getClickAction blocks
-    getClickAction :: BlockOutput -> Maybe (T.Text, Click -> IO ())
+    getClickAction :: BlockOutput -> Maybe (T.Text, Click -> BarIO ())
     getClickAction block = if hasBlockName && hasClickAction then Just (fromJust maybeBlockName, fromJust maybeClickAction) else Nothing
       where
         maybeBlockName = getBlockName block
@@ -111,31 +111,35 @@ renderLine MainOptions{verbose} Handle{handleActionList} blockFilter blocks prev
         maybeClickAction = clickAction block
         hasClickAction = isJust maybeClickAction
 
-createBarUpdateChannel :: IO (BarUpdateChannel, BarUpdateEvent)
+createBarUpdateChannel :: IO (IO (), BarUpdateEvent)
 createBarUpdateChannel = do
   event <- Event.newSet
-  return (BarUpdateChannel $ Event.set event, event)
+  return (Event.set event, event)
 
-handleStdin :: MainOptions -> IORef [(T.Text, Click -> IO ())] -> IO ()
-handleStdin options actionListIORef = forever $ do
-  line <- BSSC8.hGetLine stdin
+handleStdin :: MainOptions -> IORef [(T.Text, Click -> BarIO ())] -> BarIO ()
+handleStdin options actionListIORef = do
+  bar <- ask
+  liftIO $ forever $ do
+    line <- BSSC8.hGetLine stdin
 
-  unless (line == "[") $ do
-    -- Echo input to stderr when verbose flag is set
-    when (verbose options) $ do
-      BSSC8.hPutStrLn stderr line
-      hFlush stderr
+    unless (line == "[") $ do
+      -- Echo input to stderr when verbose flag is set
+      when (verbose options) $ do
+        BSSC8.hPutStrLn stderr line
+        hFlush stderr
 
-    let maybeClick = decode $ removeComma $ BS.fromStrict line
-    case maybeClick of
-      Just click -> do
-        clickActionList <- readIORef actionListIORef
-        let clickAction' = getClickAction clickActionList click
-        async ((fromMaybe discard clickAction') click) >>= link
-      Nothing -> return ()
+      let maybeClick = decode $ removeComma $ BS.fromStrict line
+      case maybeClick of
+        Just click -> do
+          clickActionList <- readIORef actionListIORef
+          let maybeClickAction = getClickAction clickActionList click
+          case maybeClickAction of
+            Just clickAction' -> async (runReaderT (clickAction' click) bar) >>= link
+            Nothing -> return ()
+        Nothing -> return ()
 
   where
-    getClickAction :: [(T.Text, Click -> IO ())] -> Click -> Maybe (Click -> IO ())
+    getClickAction :: [(T.Text, Click -> BarIO ())] -> Click -> Maybe (Click -> BarIO ())
     getClickAction clickActionList click = lookup (name click) clickActionList
     removeComma :: C8.ByteString -> C8.ByteString
     removeComma line
@@ -149,23 +153,13 @@ installSignalHandlers barUpdateChannel = void $ installHandler sigCONT (Catch si
     sigContAction :: IO ()
     sigContAction = do
       hPutStrLn stderr "SIGCONT received"
-      updateBar barUpdateChannel
+      updateBar' barUpdateChannel
 
-runBarConfiguration :: (BarUpdateChannel -> Producer CachedBlock IO ()) -> MainOptions -> IO ()
+runBarConfiguration :: BarConfiguration -> MainOptions -> IO ()
 runBarConfiguration generateBarConfig options = do
-  -- Create IORef for mouse click callbacks
-  actionList <- newIORef []
-  --link =<< async (handleStdin options actionList)
-  void $ forkFinally (handleStdin options actionList) (\result -> hPutStrLn stderr $ "handleStdin failed: " <> show result)
-
   -- Create IORef to contain the active filter
   let initialBlockFilter = StaticFilter None
   activeFilter <- newIORef initialBlockFilter
-
-  let handle = Handle {
-    handleActionList = actionList,
-    handleActiveFilter = activeFilter
-  }
 
   putStrLn "{\"version\":1,\"click_events\":true}"
   putStrLn "["
@@ -176,21 +170,31 @@ runBarConfiguration generateBarConfig options = do
   -- Attach spinner indicator when verbose flag is set
   let initialBlocks' = if indicator options then initialBlocks <> [createBlock "*"] else initialBlocks
 
+  (requestBarUpdate, barUpdateEvent) <- createBarUpdateChannel
+  -- TODO: should be removed
+  let barUpdateChannel = BarUpdateChannel requestBarUpdate
+
+  -- Create channel to send new block producers to render loop
+  newBlockChan <- newTChanIO
+
+  let bar = Bar { requestBarUpdate, newBlockChan }
+
+  -- Create IORef for mouse click callbacks
+  actionList <- newIORef []
+  let handle = Handle {
+    handleActionList = actionList,
+    handleActiveFilter = activeFilter
+  }
+
+
   -- Render initial time block so the bar is not empty after startup
   initialOutput <- renderLine options handle initialBlockFilter initialBlocks' ""
 
-  -- Create and initialzie blocks
-  (barUpdateChannel, barUpdateEvent) <- createBarUpdateChannel
-  blocks <- toListM $ generateBarConfig barUpdateChannel
+  -- Fork stdin handler
+  void $ forkFinally (runReaderT (handleStdin options actionList) bar) (\result -> hPutStrLn stderr $ "handleStdin failed: " <> show result)
 
-  -- Attach spinner indicator when verbose flag is set
-  let blocks' = if indicator options then  (renderIndicator:blocks) else blocks
 
-  -- Create channel to send new block producers to render loop
-  newBlocks <- newTChanIO
-
-  -- Send initial block producers to render loop
-  forM_ blocks' $ \ bp -> atomically $ writeTChan newBlocks bp
+  runReaderT loadBlocks bar
 
   -- Install signal handler for SIGCONT
   installSignalHandlers barUpdateChannel
@@ -206,9 +210,16 @@ runBarConfiguration generateBarConfig options = do
     case command of
       SetFilter blockFilter -> atomicWriteIORef activeFilter blockFilter
     updateBar barUpdateChannel
+    updateBar' barUpdateChannel
   link socketUpdateAsync
 
-  renderLoop options handle barUpdateEvent initialOutput newBlocks
+  renderLoop options handle barUpdateEvent initialOutput newBlockChan
+  where
+    loadBlocks :: BarIO ()
+    loadBlocks = do
+      when (indicator options) $ addBlock renderIndicator
+      -- Evaluate config
+      generateBarConfig
 
 createCommandChan :: IO CommandChan
 createCommandChan = newTChanIO

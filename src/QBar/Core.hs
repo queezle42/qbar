@@ -7,10 +7,12 @@ import QBar.Pango
 
 import Control.Exception (catch, finally, IOException)
 import Control.Monad (forever)
+import Control.Monad.Reader (ReaderT, runReaderT, ask, asks)
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.Async
 import Control.Concurrent.Event as Event
 import Control.Concurrent.MVar
+import Control.Concurrent.STM.TChan (TChan, writeTChan)
 import Data.Aeson.TH
 import qualified Data.ByteString.Lazy.Char8 as C8
 import qualified Data.HashMap.Lazy as HM
@@ -29,18 +31,18 @@ import System.Process.Typed (shell, withProcessWait, setStdin, setStdout, getStd
 
 import Data.Colour.RGBSpace
 
-data BlockOutput = BlockOutput {
-  values :: HM.HashMap T.Text T.Text,
-  clickAction :: Maybe (Click -> IO ())
-}
-instance Show BlockOutput where
-  show BlockOutput{values} = show values
-
 data Click = Click {
   name :: T.Text,
   button :: Int
 } deriving Show
 $(deriveJSON defaultOptions ''Click)
+
+data BlockOutput = BlockOutput {
+  values :: HM.HashMap T.Text T.Text,
+  clickAction :: Maybe (Click -> BarIO ())
+}
+instance Show BlockOutput where
+  show BlockOutput{values} = show values
 
 data PushMode = PushMode
 data PullMode = PullMode
@@ -55,7 +57,7 @@ type PullBlock = Producer BlockOutput IO PullMode
 type CachedBlock = Producer BlockOutput IO CachedMode
 
 class IsBlock a where
-  toCachedBlock :: BarUpdateChannel -> a -> CachedBlock
+  toCachedBlock :: Bar -> a -> CachedBlock
 instance IsBlock PushBlock where
   toCachedBlock = cachePushBlock
 instance IsBlock CachedBlock where
@@ -71,11 +73,18 @@ instance IsBlockMode CachedMode where
   exitBlock = return CachedMode
 
 
+type BarIO a = ReaderT Bar IO a
+
+data Bar = Bar {
+  requestBarUpdate :: IO (),
+  newBlockChan :: TChan CachedBlock
+}
+
 data BarUpdateChannel = BarUpdateChannel (IO ())
 type BarUpdateEvent = Event.Event
 
 
-type BarConfiguration = BarUpdateChannel -> Producer CachedBlock IO ()
+type BarConfiguration = BarIO ()
 
 
 defaultColor :: T.Text
@@ -180,17 +189,17 @@ cacheFromInput input = fmap (\_ -> CachedMode) $ fromInput input
 
 -- | Create a shared interval. Takes a BarUpdateChannel to signal bar updates and an interval (in seconds).Data.Maybe
 -- Returns an IO action that can be used to attach blocks to the shared interval and an async that contains a reference to the scheduler thread.
-sharedInterval :: BarUpdateChannel -> Int -> IO (PullBlock -> CachedBlock, Async ())
-sharedInterval barUpdateChannel seconds = do
-  clientsMVar <- newMVar ([] :: [(MVar PullBlock, Output BlockOutput)])
+sharedInterval :: Int -> BarIO (PullBlock -> CachedBlock, Async ())
+sharedInterval seconds = do
+  clientsMVar <- liftIO $ newMVar ([] :: [(MVar PullBlock, Output BlockOutput)])
 
-  task <- async $ forever $ do
-    threadDelay $ seconds * 1000000
+  task <- barAsync $ forever $ do
+    liftIO $ threadDelay $ seconds * 1000000
     -- Updates all client blocks
     -- If send returns 'False' the clients mailbox has been closed, so it is removed
-    modifyMVar_ clientsMVar (fmap catMaybes . mapConcurrently runAndFilterClient)
+    liftIO $ modifyMVar_ clientsMVar (fmap catMaybes . mapConcurrently runAndFilterClient)
     -- Then update the bar
-    updateBar barUpdateChannel
+    updateBar
 
   return (addClient clientsMVar, task)
     where
@@ -214,17 +223,17 @@ sharedInterval barUpdateChannel seconds = do
                 -- Mailbox is sealed, stop running producer
                 else return (exitBlock, False)
         where
-          updateClickHandler :: BlockOutput -> Click -> IO ()
+          updateClickHandler :: BlockOutput -> Click -> BarIO ()
           updateClickHandler block _ = do
             -- Give user feedback that the block is updating
             let outdatedBlock = setColor updatingColor $ removePango block
-            void $ atomically $ send output $ outdatedBlock
+            lift $ void $ atomically $ send output $ outdatedBlock
             -- Notify bar about changed block state to display the feedback
-            updateBar barUpdateChannel
+            updateBar
             -- Run a normal block update to update the block to the new value
-            void $ runClient (blockProducerMVar, output)
+            lift $ void $ runClient (blockProducerMVar, output)
             -- Notify bar about changed block state, this is usually done by the shared interval handler
-            updateBar barUpdateChannel
+            updateBar
       addClient :: MVar [(MVar PullBlock, Output BlockOutput)] -> PullBlock -> CachedBlock
       addClient clientsMVar blockProducer = do
         -- Spawn the mailbox that preserves the latest block
@@ -259,29 +268,31 @@ blockScript path = forever $ yield =<< (lift $ blockScriptAction)
     createScriptBlock :: T.Text -> BlockOutput
     createScriptBlock text = pangoMarkup $ setBlockName (T.pack path) $ createBlock text
 
-startPersistentBlockScript :: BarUpdateChannel -> FilePath -> CachedBlock
+startPersistentBlockScript :: FilePath -> BarIO CachedBlock
 -- This is only using 'CachedBlock' because the code was already written and tested
 -- This could probably be massively simplified by using the new 'pushBlock'
-startPersistentBlockScript barUpdateChannel path = do
-  (output, input, seal) <- lift $ spawn' $ latest $ emptyBlock
-  initialDataEvent <- lift $ Event.new
-  task <- lift $ async $ do
-    let processConfig = setStdin closed $ setStdout createPipe $ shell path
-    finally (
-      catch (
-        withProcessWait processConfig $ \ process -> do
-          let handle = getStdout process
-          runEffect $ (fromHandle handle) >-> signalFirstBlock initialDataEvent >-> toOutput output
+startPersistentBlockScript path = do
+  bar <- ask
+  return $ do
+    (output, input, seal) <- lift $ spawn' $ latest $ emptyBlock
+    initialDataEvent <- lift $ Event.new
+    task <- lift $ async $ do
+      let processConfig = setStdin closed $ setStdout createPipe $ shell path
+      finally (
+        catch (
+          withProcessWait processConfig $ \ process -> do
+            let handle = getStdout process
+            runEffect $ (fromHandle bar handle) >-> signalFirstBlock initialDataEvent >-> toOutput output
+          )
+          ( \ e ->
+            -- output error
+            runEffect $ (yield $ createErrorBlock $ "[" <> (T.pack $ show (e :: IOException)) <> "]") >-> signalFirstBlock initialDataEvent >-> toOutput output
+          )
         )
-        ( \ e ->
-          -- output error
-          runEffect $ (yield $ createErrorBlock $ "[" <> (T.pack $ show (e :: IOException)) <> "]") >-> signalFirstBlock initialDataEvent >-> toOutput output
-        )
-      )
-      (atomically seal)
-  lift $ link task
-  lift $ Event.wait initialDataEvent
-  cacheFromInput input
+        (atomically seal)
+    lift $ link task
+    lift $ Event.wait initialDataEvent
+    cacheFromInput input
   where
     signalFirstBlock :: Event.Event -> Pipe BlockOutput BlockOutput IO ()
     signalFirstBlock event = do
@@ -290,11 +301,11 @@ startPersistentBlockScript barUpdateChannel path = do
       lift $ Event.set event
       -- Replace with cat
       cat
-    fromHandle :: Handle -> Producer BlockOutput IO ()
-    fromHandle handle = forever $ do
+    fromHandle :: Bar -> Handle -> Producer BlockOutput IO ()
+    fromHandle bar handle = forever $ do
       line <- lift $ TIO.hGetLine handle
       yield $ pangoMarkup $ createBlock line
-      lift $ updateBar barUpdateChannel
+      lift $ updateBar'' bar
 
 pangoColor :: RGB Double -> T.Text
 pangoColor (RGB r g b) =
@@ -310,11 +321,29 @@ pangoColor (RGB r g b) =
           padding = if len == 1 then "0" else ""
       in padding <> hex
 
-updateBar :: BarUpdateChannel -> IO ()
-updateBar (BarUpdateChannel updateAction) = updateAction
 
-cachePushBlock :: BarUpdateChannel -> PushBlock -> CachedBlock
-cachePushBlock barUpdateChannel pushBlock =
+addBlock :: IsBlock a => a -> BarIO ()
+addBlock block = do
+  newBlockChan' <- asks newBlockChan
+  cachedBlock <- asks toCachedBlock <*> return block
+  liftIO $ atomically $ writeTChan newBlockChan' cachedBlock
+
+updateBar :: BarIO ()
+updateBar = liftIO =<< asks requestBarUpdate
+
+updateBar' :: BarUpdateChannel -> IO ()
+updateBar' (BarUpdateChannel updateAction) = updateAction
+
+updateBar'' :: Bar -> IO ()
+updateBar'' = updateBar' . BarUpdateChannel . requestBarUpdate
+
+barAsync :: BarIO a -> BarIO (Async a)
+barAsync action = do
+  bar <- ask
+  lift $ async $ runReaderT action bar
+
+cachePushBlock :: Bar -> PushBlock -> CachedBlock
+cachePushBlock bar pushBlock =
   lift (next pushBlock) >>= either (\_ -> exitBlock) withInitialBlock
   where
     withInitialBlock :: (BlockOutput, PushBlock) -> CachedBlock
@@ -327,14 +356,14 @@ cachePushBlock barUpdateChannel pushBlock =
     sendProducerToMailbox output seal pushBlock' = do
       void $ runEffect $ for pushBlock' (sendOutputToMailbox output)
       atomically $ void $ send output Nothing
-      updateBar barUpdateChannel
+      updateBar'' bar
       atomically seal
     sendOutputToMailbox :: Output (Maybe BlockOutput) -> BlockOutput -> Effect IO ()
     sendOutputToMailbox output blockOutput = lift $ do
       -- The void is discarding the boolean result that indicates if the mailbox is sealed
       -- This is ok because a cached block is never sealed from the receiving side
       atomically $ void $ send output $ Just blockOutput
-      updateBar barUpdateChannel
+      updateBar'' bar
     terminateOnMaybe :: Producer (Maybe BlockOutput) IO () -> Producer BlockOutput IO CachedMode
     terminateOnMaybe p = do
       eitherMaybeValue <- lift $ next p

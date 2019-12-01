@@ -9,9 +9,9 @@ import Pipes
 blockLocation :: String -> FilePath
 blockLocation name = "~/.config/qbar/blocks/" <> name
 
-generateDefaultBarConfig :: BarUpdateChannel -> Producer CachedBlock IO ()
-generateDefaultBarConfig barUpdateChannel = do
-  (systemInfoInterval, systemInfoIntervalTask) <- lift $ sharedInterval barUpdateChannel 10
+generateDefaultBarConfig :: BarIO ()
+generateDefaultBarConfig = do
+  (systemInfoInterval, systemInfoIntervalTask) <- sharedInterval 10
   lift $ link systemInfoIntervalTask
 
   let todo = (systemInfoInterval $ blockScript $ blockLocation "todo")
@@ -20,7 +20,7 @@ generateDefaultBarConfig barUpdateChannel = do
   let cpu = (systemInfoInterval $ blockScript $ blockLocation "cpu_usage") >-> modify (setBlockName "cpu" . addIcon "💻") >-> autoPadding
   let ram = (systemInfoInterval $ blockScript $ blockLocation "memory") >-> modify (addIcon "🐏") >-> autoPadding
   let temperature = (systemInfoInterval $ blockScript $ blockLocation "temperature") >-> autoPadding
-  let volumeBlock = startPersistentBlockScript barUpdateChannel $ blockLocation "volume-pulseaudio -S -F3"
+  volumeBlock <- startPersistentBlockScript $ blockLocation "volume-pulseaudio -S -F3"
   let battery = (systemInfoInterval $ blockScript $ blockLocation "battery2")
 
   addBlock dateBlock
@@ -32,6 +32,3 @@ generateDefaultBarConfig barUpdateChannel = do
   addBlock networkEnvironment
   addBlock wifi
   addBlock todo
-  where
-    addBlock :: IsBlock a => a -> Producer CachedBlock IO ()
-    addBlock block = yield $ toCachedBlock barUpdateChannel block
