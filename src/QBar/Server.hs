@@ -37,44 +37,44 @@ renderIndicator :: CachedBlock
 -- Using 'cachedBlock' is a hack to actually get the block to update on every bar update (by doing this it will not get a cache later in the pipeline).
 renderIndicator = forever $ each $ map createBlock ["/", "-", "\\", "|"]
 
-runBlock :: CachedBlock -> IO (Maybe (BlockOutput, CachedBlock))
+runBlock :: CachedBlock -> BarIO (Maybe (BlockOutput, CachedBlock))
 runBlock producer = do
   next' <- next producer
   return $ case next' of
     Left _ -> Nothing
     Right (block, newProducer) -> Just (block, newProducer)
 
-runBlocks :: [CachedBlock] -> IO ([BlockOutput], [CachedBlock])
+runBlocks :: [CachedBlock] -> BarIO ([BlockOutput], [CachedBlock])
 runBlocks block = unzip . catMaybes <$> mapM runBlock block
 
-renderLoop :: MainOptions -> Handle -> BarUpdateEvent -> BS.ByteString -> TChan CachedBlock -> IO ()
+renderLoop :: MainOptions -> Handle -> BarUpdateEvent -> BS.ByteString -> TChan CachedBlock -> BarIO ()
 renderLoop options handle@Handle{handleActiveFilter} barUpdateEvent previousBarOutput newBlockChan = renderLoop' previousBarOutput []
   where
-    addNewBlocks :: [CachedBlock] -> IO [CachedBlock]
+    addNewBlocks :: [CachedBlock] -> BarIO [CachedBlock]
     addNewBlocks blocks = do
-      maybeNewBlock <- atomically $ tryReadTChan newBlockChan
+      maybeNewBlock <- liftIO $ atomically $ tryReadTChan newBlockChan
       case maybeNewBlock of
         Nothing -> return blocks
         Just newBlock -> addNewBlocks (newBlock:blocks)
-    renderLoop' :: BS.ByteString -> [CachedBlock] -> IO ()
+    renderLoop' :: BS.ByteString -> [CachedBlock] -> BarIO ()
     renderLoop' previousBarOutput' blocks = do
-      blockFilter <- readIORef handleActiveFilter
+      blockFilter <- liftIO $ readIORef handleActiveFilter
 
       -- Wait for an event (unless the filter is animated)
-      unless (isAnimatedFilter blockFilter) $ Event.wait barUpdateEvent
+      unless (isAnimatedFilter blockFilter) $ liftIO $ Event.wait barUpdateEvent
 
       -- Wait for 10ms after first events to catch (almost-)simultaneous event updates
-      threadDelay 10000
-      Event.clear barUpdateEvent
+      liftIO $ threadDelay 10000
+      liftIO $ Event.clear barUpdateEvent
 
       blocks' <- addNewBlocks blocks
 
       (blockOutputs, blocks'') <- runBlocks blocks'
 
-      currentBarOutput <- renderLine options handle blockFilter blockOutputs previousBarOutput'
+      currentBarOutput <- liftIO $ renderLine options handle blockFilter blockOutputs previousBarOutput'
 
       -- Wait for 100ms after rendering a line to limit cpu load of rapid events
-      threadDelay 100000
+      liftIO $ threadDelay 100000
 
       renderLoop' currentBarOutput blocks''
 
@@ -209,11 +209,11 @@ runBarConfiguration generateBarConfig options = do
     command <- atomically $ readTChan commandChan
     case command of
       SetFilter blockFilter -> atomicWriteIORef activeFilter blockFilter
-    updateBar barUpdateChannel
+      Block -> error "TODO"
     updateBar' barUpdateChannel
   link socketUpdateAsync
 
-  renderLoop options handle barUpdateEvent initialOutput newBlockChan
+  runReaderT (renderLoop options handle barUpdateEvent initialOutput newBlockChan) bar
   where
     loadBlocks :: BarIO ()
     loadBlocks = do

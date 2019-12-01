@@ -12,8 +12,8 @@ import Pipes
 
 dateBlock :: PushBlock
 dateBlock = do
-  yield =<< lift dateBlockOutput
-  lift $ sleepUntil =<< nextMinute
+  yield =<< liftIO dateBlockOutput
+  liftIO $ sleepUntil =<< nextMinute
   dateBlock
 
 dateBlockOutput :: IO BlockOutput

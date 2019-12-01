@@ -4,6 +4,7 @@
 module QBar.ControlSocket where
 
 import QBar.Cli (MainOptions(..))
+import QBar.Core
 -- TODO: remove dependency?
 import QBar.Filter
 
@@ -13,9 +14,11 @@ import Control.Concurrent (forkFinally)
 import Control.Concurrent.Async
 import Control.Concurrent.STM.TChan (TChan, writeTChan)
 import Data.Aeson.TH
+import Data.ByteString (ByteString)
 import Data.Either (either)
 import Data.Text.Lazy (Text, pack)
 import qualified Data.Text as T
+import qualified Data.Text.Lazy as TL
 import Network.Socket
 import Pipes
 import Pipes.Parse
@@ -30,6 +33,7 @@ import System.IO
 type CommandChan = TChan Command
 
 data Command = SetFilter Filter
+  | Block
   deriving Show
 
 data SocketResponse = Success | Error Text
@@ -45,6 +49,8 @@ ipcSocketAddress MainOptions{socketLocation} = maybe defaultSocketPath (return .
     defaultSocketPath = do
       xdgRuntimeDir <- getEnv "XDG_RUNTIME_DIR"
       waylandDisplay <- getEnv "WAYLAND_DISPLAY"
+      -- TODO: fallback to I3_SOCKET_PATH if WAYLAND_DISPLAY is not set.
+      -- If both are not set it might be useful to fall back to XDG_RUNTIME_DIR/qbar, so qbar can run headless (eg. for tests)
       return $ xdgRuntimeDir </> waylandDisplay <> "-qbar"
 
 sendIpc :: MainOptions -> Command -> IO ()
@@ -83,14 +89,28 @@ listenUnixSocket options commandChan = do
     void $ forkFinally (socketHandler conn) (\_ -> close conn)
   where
     socketHandler :: Socket -> IO ()
-    socketHandler sock = do
-      decodeResult <- evalStateT decode $ fromSocket sock 4096
-      response <- maybe (errorResponse "Empty stream") (either (errorResponse . pack . show) commandHandler) decodeResult
-      let consumer = toSocket sock
+    socketHandler sock = streamHandler (fromSocket sock 4096) (toSocket sock)
+    streamHandler :: Producer ByteString IO () -> Consumer ByteString IO () -> IO ()
+    streamHandler producer consumer = do
+      (decodeResult, leftovers) <- runStateT decode producer
+      response <- maybe (errorResponse "Empty stream") (either handleError (handleCommand leftovers)) decodeResult
       runEffect (encode response >-> consumer)
-    commandHandler :: Command -> IO SocketResponse
-    commandHandler command = do
+    handleCommand :: Producer ByteString IO () -> Command -> IO SocketResponse
+    handleCommand _ Block = error "TODO" -- addBlock $ handleBlockStream leftovers
+    handleCommand _ command = do
       atomically $ writeTChan commandChan command
       return Success
+    handleError :: DecodingError -> IO SocketResponse
+    handleError = return . Error . pack . show
     errorResponse :: Text -> IO SocketResponse
     errorResponse message = return $ Error message
+
+handleBlockStream :: Producer ByteString IO () -> PushBlock
+handleBlockStream producer = do
+  (decodeResult, leftovers) <- liftIO $ runStateT decode producer
+  maybe exitBlock (either (\_ -> exitBlock) (handleParsedBlock leftovers)) decodeResult
+  where
+    handleParsedBlock :: Producer ByteString IO () -> String -> PushBlock
+    handleParsedBlock leftovers update = do
+      yield $ createBlock $ TL.pack update
+      handleBlockStream leftovers
