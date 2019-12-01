@@ -48,14 +48,11 @@ data CachedMode = CachedMode
 
 
 -- |Block that 'yield's an update whenever the block should be changed
-type PushBlock = PushBlockProducer
-type PushBlockProducer = Producer BlockOutput IO PushMode
+type PushBlock = Producer BlockOutput IO PushMode
 -- |Block that generates an update on 'yield'. Should only be pulled when an update is required.
-type PullBlock = PullBlockProducer
-type PullBlockProducer = Producer BlockOutput IO PullMode
+type PullBlock = Producer BlockOutput IO PullMode
 -- |Cached block. Always 'yield's the latest update, so it should only be pulled when the bar is rendered.
-type CachedBlock = CachedBlockProducer
-type CachedBlockProducer = Producer BlockOutput IO CachedMode
+type CachedBlock = Producer BlockOutput IO CachedMode
 
 class IsBlock a where
   toCachedBlock :: BarUpdateChannel -> a -> CachedBlock
@@ -185,7 +182,7 @@ cacheFromInput input = fmap (\_ -> CachedMode) $ fromInput input
 -- Returns an IO action that can be used to attach blocks to the shared interval and an async that contains a reference to the scheduler thread.
 sharedInterval :: BarUpdateChannel -> Int -> IO (PullBlock -> CachedBlock, Async ())
 sharedInterval barUpdateChannel seconds = do
-  clientsMVar <- newMVar ([] :: [(MVar PullBlockProducer, Output BlockOutput)])
+  clientsMVar <- newMVar ([] :: [(MVar PullBlock, Output BlockOutput)])
 
   task <- async $ forever $ do
     threadDelay $ seconds * 1000000
@@ -197,11 +194,11 @@ sharedInterval barUpdateChannel seconds = do
 
   return (addClient clientsMVar, task)
     where
-      runAndFilterClient :: (MVar PullBlockProducer, Output BlockOutput) -> IO (Maybe (MVar PullBlockProducer, Output BlockOutput))
+      runAndFilterClient :: (MVar PullBlock, Output BlockOutput) -> IO (Maybe (MVar PullBlock, Output BlockOutput))
       runAndFilterClient client = do
         result <- runClient client
         return $ if result then Just client else Nothing
-      runClient :: (MVar PullBlockProducer, Output BlockOutput) -> IO Bool
+      runClient :: (MVar PullBlock, Output BlockOutput) -> IO Bool
       runClient (blockProducerMVar, output) =
         modifyMVar blockProducerMVar $ \blockProducer -> do
           result <- next blockProducer
@@ -228,7 +225,7 @@ sharedInterval barUpdateChannel seconds = do
             void $ runClient (blockProducerMVar, output)
             -- Notify bar about changed block state, this is usually done by the shared interval handler
             updateBar barUpdateChannel
-      addClient :: MVar [(MVar PullBlockProducer, Output BlockOutput)] -> PullBlockProducer -> CachedBlock
+      addClient :: MVar [(MVar PullBlock, Output BlockOutput)] -> PullBlock -> CachedBlock
       addClient clientsMVar blockProducer = do
         -- Spawn the mailbox that preserves the latest block
         (output, input) <- lift $ spawn $ latest emptyBlock

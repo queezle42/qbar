@@ -37,27 +37,27 @@ renderIndicator :: CachedBlock
 -- Using 'cachedBlock' is a hack to actually get the block to update on every bar update (by doing this it will not get a cache later in the pipeline).
 renderIndicator = forever $ each $ map createBlock ["/", "-", "\\", "|"]
 
-runBlock :: CachedBlockProducer -> IO (Maybe (BlockOutput, CachedBlockProducer))
+runBlock :: CachedBlock -> IO (Maybe (BlockOutput, CachedBlock))
 runBlock producer = do
   next' <- next producer
   return $ case next' of
     Left _ -> Nothing
     Right (block, newProducer) -> Just (block, newProducer)
 
-runBlocks :: [CachedBlockProducer] -> IO ([BlockOutput], [CachedBlockProducer])
-runBlocks blockProducers = unzip . catMaybes <$> mapM runBlock blockProducers
+runBlocks :: [CachedBlock] -> IO ([BlockOutput], [CachedBlock])
+runBlocks block = unzip . catMaybes <$> mapM runBlock block
 
 renderLoop :: MainOptions -> Handle -> BarUpdateEvent -> BS.ByteString -> TChan CachedBlock -> IO ()
 renderLoop options handle@Handle{handleActiveFilter} barUpdateEvent previousBarOutput newBlockChan = renderLoop' previousBarOutput []
   where
-    addNewBlockProducers :: [CachedBlock] -> IO [CachedBlock]
-    addNewBlockProducers blockProducers = do
+    addNewBlocks :: [CachedBlock] -> IO [CachedBlock]
+    addNewBlocks blocks = do
       maybeNewBlock <- atomically $ tryReadTChan newBlockChan
       case maybeNewBlock of
-        Nothing -> return blockProducers
-        Just newBlock -> addNewBlockProducers (newBlock:blockProducers)
+        Nothing -> return blocks
+        Just newBlock -> addNewBlocks (newBlock:blocks)
     renderLoop' :: BS.ByteString -> [CachedBlock] -> IO ()
-    renderLoop' previousBarOutput' blockProducers = do
+    renderLoop' previousBarOutput' blocks = do
       blockFilter <- readIORef handleActiveFilter
 
       -- Wait for an event (unless the filter is animated)
@@ -67,16 +67,16 @@ renderLoop options handle@Handle{handleActiveFilter} barUpdateEvent previousBarO
       threadDelay 10000
       Event.clear barUpdateEvent
 
-      blockProducers' <- addNewBlockProducers blockProducers
+      blocks' <- addNewBlocks blocks
 
-      (blocks, blockProducers'') <- runBlocks blockProducers'
+      (blockOutputs, blocks'') <- runBlocks blocks'
 
-      currentBarOutput <- renderLine options handle blockFilter blocks previousBarOutput'
+      currentBarOutput <- renderLine options handle blockFilter blockOutputs previousBarOutput'
 
       -- Wait for 100ms after rendering a line to limit cpu load of rapid events
       threadDelay 100000
 
-      renderLoop' currentBarOutput blockProducers''
+      renderLoop' currentBarOutput blocks''
 
 renderLine :: MainOptions -> Handle -> Filter -> [BlockOutput] -> BS.ByteString -> IO BS.ByteString
 renderLine MainOptions{verbose} Handle{handleActionList} blockFilter blocks previousEncodedOutput = do
@@ -181,16 +181,16 @@ runBarConfiguration generateBarConfig options = do
 
   -- Create and initialzie blocks
   (barUpdateChannel, barUpdateEvent) <- createBarUpdateChannel
-  blockProducers <- toListM $ generateBarConfig barUpdateChannel
+  blocks <- toListM $ generateBarConfig barUpdateChannel
 
   -- Attach spinner indicator when verbose flag is set
-  let blockProducers' = if indicator options then  (renderIndicator:blockProducers) else blockProducers
+  let blocks' = if indicator options then  (renderIndicator:blocks) else blocks
 
   -- Create channel to send new block producers to render loop
-  newBlockProducers <- newTChanIO
+  newBlocks <- newTChanIO
 
   -- Send initial block producers to render loop
-  forM_ blockProducers' $ \ bp -> atomically $ writeTChan newBlockProducers bp
+  forM_ blocks' $ \ bp -> atomically $ writeTChan newBlocks bp
 
   -- Install signal handler for SIGCONT
   installSignalHandlers barUpdateChannel
@@ -208,7 +208,7 @@ runBarConfiguration generateBarConfig options = do
     updateBar barUpdateChannel
   link socketUpdateAsync
 
-  renderLoop options handle barUpdateEvent initialOutput newBlockProducers
+  renderLoop options handle barUpdateEvent initialOutput newBlocks
 
 createCommandChan :: IO CommandChan
 createCommandChan = newTChanIO
