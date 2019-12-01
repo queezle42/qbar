@@ -14,14 +14,14 @@ generateDefaultBarConfig = do
   (systemInfoInterval, systemInfoIntervalTask) <- sharedInterval 10
   lift $ link systemInfoIntervalTask
 
-  let todo = (systemInfoInterval $ blockScript $ blockLocation "todo")
-  let wifi = (systemInfoInterval $ blockScript $ blockLocation "wifi2 wlan") >-> modify (addIcon "📡")
-  let networkEnvironment = (systemInfoInterval $ blockScript $ blockLocation "network-environment")
-  let cpu = (systemInfoInterval $ blockScript $ blockLocation "cpu_usage") >-> modify (setBlockName "cpu" . addIcon "💻") >-> autoPadding
-  let ram = (systemInfoInterval $ blockScript $ blockLocation "memory") >-> modify (addIcon "🐏") >-> autoPadding
-  let temperature = (systemInfoInterval $ blockScript $ blockLocation "temperature") >-> autoPadding
+  let todo = systemInfoInterval (blockScript $ blockLocation "todo")
+  let wifi = systemInfoInterval (blockScript $ blockLocation "wifi2 wlan") >-> modify (addIcon "📡")
+  let networkEnvironment = systemInfoInterval (blockScript $ blockLocation "network-environment")
+  let cpu = systemInfoInterval (blockScript $ blockLocation "cpu_usage") >-> modify (setBlockName "cpu" . addIcon "💻") >-> autoPadding
+  let ram = systemInfoInterval (blockScript $ blockLocation "memory") >-> modify (addIcon "🐏") >-> autoPadding
+  let temperature = systemInfoInterval (blockScript $ blockLocation "temperature") >-> autoPadding
   let volumeBlock = startPersistentBlockScript $ blockLocation "volume-pulseaudio -S -F3"
-  let battery = (systemInfoInterval $ blockScript $ blockLocation "battery2")
+  let battery = systemInfoInterval $ blockScript $ blockLocation "battery2"
 
   addBlock dateBlock
   addBlock battery
