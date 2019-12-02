@@ -272,29 +272,39 @@ blockScript path = forever $ yield =<< (lift $ blockScriptAction)
     createScriptBlock :: T.Text -> BlockOutput
     createScriptBlock text = pangoMarkup $ setBlockName (T.pack path) $ createBlock text
 
-
 startPersistentBlockScript :: FilePath -> CachedBlock
+-- This is only using 'CachedBlock' because the code was already written and tested
+-- This could probably be massively simplified by using the new 'pushBlock'
 startPersistentBlockScript path = do
   bar <- lift $ ask
   do
     (output, input, seal) <- liftIO $ spawn' $ latest $ emptyBlock
+    initialDataEvent <- liftIO $ Event.new
     task <- liftIO $ async $ do
       let processConfig = setStdin closed $ setStdout createPipe $ shell path
       finally (
         catch (
           withProcessWait processConfig $ \ process -> do
             let handle = getStdout process
-            runEffect $ (fromHandle bar handle) >-> toOutput output
+            runEffect $ (fromHandle bar handle) >-> signalFirstBlock initialDataEvent >-> toOutput output
           )
           ( \ e ->
             -- output error
-            runEffect $ (yield $ createErrorBlock $ "[" <> (T.pack $ show (e :: IOException)) <> "]") >-> toOutput output
+            runEffect $ (yield $ createErrorBlock $ "[" <> (T.pack $ show (e :: IOException)) <> "]") >-> signalFirstBlock initialDataEvent >-> toOutput output
           )
         )
         (atomically seal)
     liftIO $ link task
+    liftIO $ Event.wait initialDataEvent
     cacheFromInput input
   where
+    signalFirstBlock :: Event.Event -> Pipe BlockOutput BlockOutput IO ()
+    signalFirstBlock event = do
+      -- Await first block
+      await >>= yield
+      lift $ Event.set event
+      -- Replace with cat
+      cat
     fromHandle :: Bar -> Handle -> Producer BlockOutput IO ()
     fromHandle bar handle = forever $ do
       line <- lift $ TIO.hGetLine handle
