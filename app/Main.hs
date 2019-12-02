@@ -5,4 +5,4 @@ import QBar.DefaultConfig
 import QBar.Server
 
 main :: IO ()
-main = parseOptions >>= (runQBar generateDefaultBarConfig)
+main = parseOptions >>= runQBar generateDefaultBarConfig
