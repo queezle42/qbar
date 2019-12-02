@@ -86,8 +86,6 @@ data BarUpdateChannel = BarUpdateChannel (IO ())
 type BarUpdateEvent = Event.Event
 
 
-type BarConfiguration = BarIO ()
-
 
 defaultColor :: T.Text
 defaultColor = "#969896"
@@ -187,24 +185,31 @@ autoPadding = autoPadding' 0 0
       autoPadding' (max fullLength fullLength') (max shortLength shortLength')
 
 cacheFromInput :: Input BlockOutput -> CachedBlock
-cacheFromInput input = fmap (\_ -> CachedMode) $ fromInput input
+cacheFromInput input = const CachedMode <$> fromInput input
 
 -- | Create a shared interval. Takes a BarUpdateChannel to signal bar updates and an interval (in seconds).Data.Maybe
 -- Returns an IO action that can be used to attach blocks to the shared interval and an async that contains a reference to the scheduler thread.
-sharedInterval :: Int -> BarIO (PullBlock -> CachedBlock, Async ())
+sharedInterval :: Int -> BarIO (PullBlock -> CachedBlock)
 sharedInterval seconds = do
   clientsMVar <- liftIO $ newMVar ([] :: [(MVar PullBlock, Output BlockOutput)])
 
-  task <- barAsync $ forever $ do
-    liftIO $ threadDelay $ seconds * 1000000
-    -- Updates all client blocks
-    -- If send returns 'False' the clients mailbox has been closed, so it is removed
-    bar <- ask
-    liftIO $ modifyMVar_ clientsMVar $ fmap catMaybes . mapConcurrently (\r -> runReaderT (runAndFilterClient r) bar)
-    -- Then update the bar
-    updateBar
+  startEvent <- liftIO Event.new
 
-  return (addClient clientsMVar, task)
+  task <- barAsync $ do
+    -- Wait for at least one subscribed client
+    liftIO $ Event.wait startEvent
+    forever $ do
+      liftIO $ threadDelay $ seconds * 1000000
+      -- Updates all client blocks
+      -- If send returns 'False' the clients mailbox has been closed, so it is removed
+      bar <- ask
+      liftIO $ modifyMVar_ clientsMVar $ fmap catMaybes . mapConcurrently (\r -> runReaderT (runAndFilterClient r) bar)
+      -- Then update the bar
+      updateBar
+
+  liftIO $ link task
+
+  return (addClient startEvent clientsMVar)
   where
     runAndFilterClient :: (MVar PullBlock, Output BlockOutput) -> BarIO (Maybe (MVar PullBlock, Output BlockOutput))
     runAndFilterClient client = do
@@ -238,8 +243,8 @@ sharedInterval seconds = do
           void $ runClient (blockProducerMVar, output)
           -- Notify bar about changed block state, this is usually done by the shared interval handler
           updateBar
-    addClient :: MVar [(MVar PullBlock, Output BlockOutput)] -> PullBlock -> CachedBlock
-    addClient clientsMVar blockProducer = do
+    addClient :: Event.Event -> MVar [(MVar PullBlock, Output BlockOutput)] -> PullBlock -> CachedBlock
+    addClient startEvent clientsMVar blockProducer = do
       -- Spawn the mailbox that preserves the latest block
       (output, input) <- liftIO $ spawn $ latest emptyBlock
 
@@ -250,6 +255,9 @@ sharedInterval seconds = do
 
       -- Register the client for regular updates
       liftIO $ modifyMVar_ clientsMVar $ \ clients -> return ((blockProducerMVar, output):clients)
+
+      -- Start update thread (if not already started)
+      liftIO $ Event.set startEvent
 
       -- Return a block producer from the mailbox
       cacheFromInput input

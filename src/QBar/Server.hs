@@ -155,7 +155,7 @@ installSignalHandlers barUpdateChannel = void $ installHandler sigCONT (Catch si
       hPutStrLn stderr "SIGCONT received"
       updateBar' barUpdateChannel
 
-runBarConfiguration :: BarConfiguration -> MainOptions -> IO ()
+runBarConfiguration :: BarIO () -> MainOptions -> IO ()
 runBarConfiguration generateBarConfig options = do
   -- Create IORef to contain the active filter
   let initialBlockFilter = StaticFilter None
@@ -225,7 +225,7 @@ createCommandChan :: IO CommandChan
 createCommandChan = newTChanIO
 
 -- |Entry point.
-runQBar :: BarConfiguration -> MainOptions -> IO ()
+runQBar :: BarIO () -> MainOptions -> IO ()
 runQBar barConfiguration options@MainOptions{barCommand} = runCommand barCommand
   where
     runCommand BarServer = runBarConfiguration barConfiguration options

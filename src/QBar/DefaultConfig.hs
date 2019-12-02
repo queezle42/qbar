@@ -3,7 +3,6 @@ module QBar.DefaultConfig where
 import QBar.Blocks
 import QBar.Core
 
-import Control.Concurrent.Async
 import Pipes
 
 blockLocation :: String -> FilePath
@@ -11,8 +10,7 @@ blockLocation name = "~/.config/qbar/blocks/" <> name
 
 generateDefaultBarConfig :: BarIO ()
 generateDefaultBarConfig = do
-  (systemInfoInterval, systemInfoIntervalTask) <- sharedInterval 10
-  lift $ link systemInfoIntervalTask
+  systemInfoInterval <- sharedInterval 10
 
   let todo = systemInfoInterval (blockScript $ blockLocation "todo")
   let wifi = systemInfoInterval (blockScript $ blockLocation "wifi2 wlan") >-> modify (addIcon "📡")
