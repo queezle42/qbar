@@ -157,6 +157,16 @@ installSignalHandlers = do
       hPutStrLn stderr "SIGCONT received"
       updateBar' bar
 
+renderInitialBlocks :: MainOptions -> Handle -> Filter -> IO C8.ByteString
+renderInitialBlocks options handle blockFilter = do
+  date <- dateBlockOutput
+  let initialBlocks = [date]
+  -- Attach spinner indicator when verbose flag is set
+  let initialBlocks' = if indicator options then initialBlocks <> [createBlock "*"] else initialBlocks
+  -- Render initial time block so the bar is not empty after startup
+  renderLine options handle blockFilter initialBlocks' ""
+
+
 runBarConfiguration :: BarIO () -> MainOptions -> IO ()
 runBarConfiguration generateBarConfig options = do
   -- Create IORef to contain the active filter
@@ -165,12 +175,6 @@ runBarConfiguration generateBarConfig options = do
 
   putStrLn "{\"version\":1,\"click_events\":true}"
   putStrLn "["
-
-  date <- dateBlockOutput
-  let initialBlocks = [date]
-
-  -- Attach spinner indicator when verbose flag is set
-  let initialBlocks' = if indicator options then initialBlocks <> [createBlock "*"] else initialBlocks
 
   (requestBarUpdate, barUpdateEvent) <- createBarUpdateChannel
 
@@ -186,9 +190,8 @@ runBarConfiguration generateBarConfig options = do
     handleActiveFilter = activeFilter
   }
 
+  initialOutput <- renderInitialBlocks options handle initialBlockFilter
 
-  -- Render initial time block so the bar is not empty after startup
-  initialOutput <- renderLine options handle initialBlockFilter initialBlocks' ""
 
   -- Fork stdin handler
   void $ forkFinally (runReaderT (handleStdin options actionList) bar) (\result -> hPutStrLn stderr $ "handleStdin failed: " <> show result)
@@ -220,6 +223,7 @@ runBarConfiguration generateBarConfig options = do
       when (indicator options) $ addBlock renderIndicator
       -- Evaluate config
       generateBarConfig
+
 
 createCommandChan :: IO CommandChan
 createCommandChan = newTChanIO
