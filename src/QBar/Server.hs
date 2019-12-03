@@ -147,13 +147,15 @@ handleStdin options actionListIORef = do
       | C8.last line == ',' = C8.init line
       | otherwise = line
 
-installSignalHandlers :: BarUpdateChannel -> IO ()
-installSignalHandlers barUpdateChannel = void $ installHandler sigCONT (Catch sigContAction) Nothing
+installSignalHandlers :: BarIO ()
+installSignalHandlers = do
+  bar <- ask
+  liftIO $ void $ installHandler sigCONT (Catch (sigContAction bar)) Nothing
   where
-    sigContAction :: IO ()
-    sigContAction = do
+    sigContAction :: Bar -> IO ()
+    sigContAction bar = do
       hPutStrLn stderr "SIGCONT received"
-      updateBar' barUpdateChannel
+      updateBar'' bar
 
 runBarConfiguration :: BarIO () -> MainOptions -> IO ()
 runBarConfiguration generateBarConfig options = do
@@ -171,8 +173,6 @@ runBarConfiguration generateBarConfig options = do
   let initialBlocks' = if indicator options then initialBlocks <> [createBlock "*"] else initialBlocks
 
   (requestBarUpdate, barUpdateEvent) <- createBarUpdateChannel
-  -- TODO: should be removed
-  let barUpdateChannel = BarUpdateChannel requestBarUpdate
 
   -- Create channel to send new block producers to render loop
   newBlockChan <- newTChanIO
@@ -197,7 +197,7 @@ runBarConfiguration generateBarConfig options = do
   runReaderT loadBlocks bar
 
   -- Install signal handler for SIGCONT
-  installSignalHandlers barUpdateChannel
+  runReaderT installSignalHandlers bar
 
   -- Create control socket
   commandChan <- createCommandChan
@@ -210,7 +210,7 @@ runBarConfiguration generateBarConfig options = do
     case command of
       SetFilter blockFilter -> atomicWriteIORef activeFilter blockFilter
       Block -> error "TODO"
-    updateBar' barUpdateChannel
+    updateBar'' bar
   link socketUpdateAsync
 
   runReaderT (renderLoop options handle barUpdateEvent initialOutput newBlockChan) bar
