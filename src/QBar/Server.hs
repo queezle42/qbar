@@ -155,7 +155,7 @@ installSignalHandlers = do
     sigContAction :: Bar -> IO ()
     sigContAction bar = do
       hPutStrLn stderr "SIGCONT received"
-      updateBar'' bar
+      updateBar' bar
 
 runBarConfiguration :: BarIO () -> MainOptions -> IO ()
 runBarConfiguration generateBarConfig options = do
@@ -210,7 +210,7 @@ runBarConfiguration generateBarConfig options = do
     case command of
       SetFilter blockFilter -> atomicWriteIORef activeFilter blockFilter
       Block -> error "TODO"
-    updateBar'' bar
+    updateBar' bar
   link socketUpdateAsync
 
   runReaderT (renderLoop options handle barUpdateEvent initialOutput newBlockChan) bar

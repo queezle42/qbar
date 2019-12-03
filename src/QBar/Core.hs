@@ -317,7 +317,7 @@ startPersistentBlockScript path = do
     fromHandle bar handle = forever $ do
       line <- lift $ TIO.hGetLine handle
       yield $ pangoMarkup $ createBlock line
-      lift $ updateBar'' bar
+      lift $ updateBar' bar
 
 pangoColor :: RGB Double -> T.Text
 pangoColor (RGB r g b) =
@@ -342,11 +342,8 @@ addBlock block = do
 updateBar :: BarIO ()
 updateBar = liftIO =<< asks requestBarUpdate
 
-updateBar' :: BarUpdateChannel -> IO ()
-updateBar' (BarUpdateChannel updateAction) = updateAction
-
-updateBar'' :: Bar -> IO ()
-updateBar'' = updateBar' . BarUpdateChannel . requestBarUpdate
+updateBar' :: Bar -> IO ()
+updateBar' = runReaderT updateBar
 
 barAsync :: BarIO a -> BarIO (Async a)
 barAsync action = do
