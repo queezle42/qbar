@@ -31,7 +31,7 @@ mainOptionsParser = do
 
 parser :: ParserInfo MainOptions
 parser = info (mainOptionsParser <**> helper)
-  (fullDesc <> header "q - queezles tools")
+  (fullDesc <> header "qbar - queezles {i3,sway}bar infrastructure")
 
 parserPrefs :: ParserPrefs
 parserPrefs = prefs showHelpOnEmpty
