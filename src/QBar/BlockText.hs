@@ -11,6 +11,11 @@ instance Semigroup BlockText where
 instance Monoid BlockText where
   mempty = BlockText []
 
+intercalate :: Monoid a => a -> [a] -> a
+intercalate _ [] = mempty
+intercalate _ [x] = x
+intercalate inter (x:xs) = x <> inter <> intercalate inter xs
+
 data BlockTextSegment = BlockTextSegment {
     active :: Bool,
     importance :: Importance,
