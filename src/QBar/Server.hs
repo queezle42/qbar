@@ -168,7 +168,7 @@ renderInitialBlocks options handle blockFilter = do
 
 
 runBarConfiguration :: BarIO () -> MainOptions -> IO ()
-runBarConfiguration generateBarConfig options = do
+runBarConfiguration defaultBarConfig options = do
   -- Create IORef to contain the active filter
   let initialBlockFilter = StaticFilter None
   activeFilter <- newIORef initialBlockFilter
@@ -221,8 +221,8 @@ runBarConfiguration generateBarConfig options = do
     loadBlocks :: BarIO ()
     loadBlocks = do
       when (indicator options) $ addBlock renderIndicator
-      -- Evaluate config
-      generateBarConfig
+
+      defaultBarConfig
 
 
 createCommandChan :: IO CommandChan
