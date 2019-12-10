@@ -7,6 +7,7 @@ import QBar.Cli (MainOptions(..))
 import QBar.Core
 -- TODO: remove dependency?
 import QBar.Filter
+import QBar.BlockText
 
 import Control.Monad (forever, void, when)
 import Control.Monad.STM (atomically)
@@ -112,5 +113,5 @@ handleBlockStream producer = do
   where
     handleParsedBlock :: Producer ByteString IO () -> String -> PushBlock
     handleParsedBlock leftovers update = do
-      yield $ createBlock $ TL.pack update
+      yield $ createBlock . normalText $ TL.pack update
       handleBlockStream leftovers

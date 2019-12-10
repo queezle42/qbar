@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module QBar.Server where
 
 import QBar.Blocks
@@ -7,6 +5,8 @@ import QBar.Core
 import QBar.Cli
 import QBar.ControlSocket
 import QBar.Filter
+import QBar.BlockText
+import QBar.Themes
 
 import Control.Monad (forever, when, unless)
 import Control.Monad.Reader (runReaderT, ask)
@@ -15,18 +15,19 @@ import Control.Concurrent (threadDelay, forkFinally)
 import Control.Concurrent.Async
 import Control.Concurrent.Event as Event
 import Control.Concurrent.STM.TChan (TChan, newTChanIO, readTChan, tryReadTChan)
-import Data.Aeson (encode, decode)
+import Data.Aeson (encode, decode, ToJSON, toJSON, object, (.=))
 import Data.ByteString.Lazy (hPut)
 import qualified Data.ByteString.Char8 as BSSC8
 import qualified Data.ByteString.Lazy as BS
 import qualified Data.ByteString.Lazy.Char8 as C8
 import Data.IORef
-import Data.Maybe (isJust, fromJust, catMaybes, mapMaybe)
+import Data.Maybe (catMaybes, mapMaybe, fromMaybe)
 import qualified Data.Text.Lazy as T
 import Data.Time.Clock.POSIX
 import Pipes
 import System.IO (stdin, stdout, stderr, hFlush, hPutStrLn)
 import System.Posix.Signals
+import Control.Lens hiding (each, (.=))
 
 data Handle = Handle {
   handleActionList :: IORef [(T.Text, Click -> BarIO ())],
@@ -35,7 +36,7 @@ data Handle = Handle {
 
 renderIndicator :: CachedBlock
 -- Using 'cachedBlock' is a hack to actually get the block to update on every bar update (by doing this it will not get a cache later in the pipeline).
-renderIndicator = forever $ each $ map createBlock ["/", "-", "\\", "|"]
+renderIndicator = forever $ each $ map (createBlock . normalText) ["/", "-", "\\", "|"]
 
 runBlock :: CachedBlock -> BarIO (Maybe (BlockOutput, CachedBlock))
 runBlock producer = do
@@ -46,6 +47,19 @@ runBlock producer = do
 
 runBlocks :: [CachedBlock] -> BarIO ([BlockOutput], [CachedBlock])
 runBlocks block = unzip . catMaybes <$> mapM runBlock block
+
+data RenderBlock = RenderBlock T.Text (Maybe T.Text) (Maybe T.Text)
+  deriving(Show)
+instance ToJSON RenderBlock where
+  toJSON (RenderBlock fullText' shortText' blockName') = object $
+    fullText'' <> shortText'' <> blockName'' <> pango''
+    where
+      fullText'' = [ "full_text" .= fullText' ]
+      shortText'' = fromMaybe (\s -> ["short_text".=s]) mempty shortText'
+      blockName'' = fromMaybe (\s -> ["block_name".=s]) mempty blockName'
+      pango'' = [ "markup" .= ("pango" :: T.Text) ]
+
+
 
 renderLoop :: MainOptions -> Handle -> BarUpdateEvent -> BS.ByteString -> TChan CachedBlock -> BarIO ()
 renderLoop options handle@Handle{handleActiveFilter} barUpdateEvent previousBarOutput newBlockChan = renderLoop' previousBarOutput []
@@ -82,7 +96,8 @@ renderLine :: MainOptions -> Handle -> Filter -> [BlockOutput] -> BS.ByteString 
 renderLine MainOptions{verbose} Handle{handleActionList} blockFilter blocks previousEncodedOutput = do
   time <- fromRational . toRational <$> getPOSIXTime
   let filteredBlocks = applyFilter blockFilter time blocks
-  let encodedOutput = encode $ map values filteredBlocks
+  -- let encodedOutput = encode $ map values filteredBlocks
+  let encodedOutput = encodeOutput filteredBlocks
   let changed = previousEncodedOutput /= encodedOutput
   when changed $ do
     hPut stdout encodedOutput
@@ -101,15 +116,19 @@ renderLine MainOptions{verbose} Handle{handleActionList} blockFilter blocks prev
 
   return encodedOutput
   where
+    theme :: Theme
+    theme = defaultTheme
+    encodeOutput :: [BlockOutput] -> BS.ByteString
+    encodeOutput bs = encode $ zipWith encodeBlock bs $ theme bs
+    encodeBlock :: BlockOutput -> (T.Text, Maybe T.Text) -> RenderBlock
+    encodeBlock b (fullText', shortText') = RenderBlock fullText' shortText' (b^.blockName)
     clickActionList :: [(T.Text, Click -> BarIO ())]
     clickActionList = mapMaybe getClickAction blocks
     getClickAction :: BlockOutput -> Maybe (T.Text, Click -> BarIO ())
-    getClickAction block = if hasBlockName && hasClickAction then Just (fromJust maybeBlockName, fromJust maybeClickAction) else Nothing
-      where
-        maybeBlockName = getBlockName block
-        hasBlockName = isJust maybeBlockName
-        maybeClickAction = clickAction block
-        hasClickAction = isJust maybeClickAction
+    getClickAction block = do
+      blockName' <- block^.blockName
+      clickAction' <- block^.clickAction
+      return (blockName', clickAction')
 
 createBarUpdateChannel :: IO (IO (), BarUpdateEvent)
 createBarUpdateChannel = do
@@ -162,7 +181,7 @@ renderInitialBlocks options handle blockFilter = do
   date <- dateBlockOutput
   let initialBlocks = [date]
   -- Attach spinner indicator when verbose flag is set
-  let initialBlocks' = if indicator options then initialBlocks <> [createBlock "*"] else initialBlocks
+  let initialBlocks' = if indicator options then initialBlocks <> [createBlock . normalText $ "*"] else initialBlocks
   -- Render initial time block so the bar is not empty after startup
   renderLine options handle blockFilter initialBlocks' ""
 

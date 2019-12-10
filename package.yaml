@@ -29,6 +29,7 @@ dependencies:
 - concurrent-extra
 - directory
 - filepath
+- lens
 - mtl
 - network
 - optparse-applicative

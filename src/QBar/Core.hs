@@ -3,7 +3,7 @@
 
 module QBar.Core where
 
-import QBar.Pango
+import QBar.BlockText
 
 import Control.Exception (catch, finally, IOException)
 import Control.Monad (forever)
@@ -15,21 +15,19 @@ import Control.Concurrent.MVar
 import Control.Concurrent.STM.TChan (TChan, writeTChan)
 import Data.Aeson.TH
 import qualified Data.ByteString.Lazy.Char8 as C8
-import qualified Data.HashMap.Lazy as HM
 import Data.Int (Int64)
-import Data.Maybe (fromMaybe, catMaybes)
+import Data.Maybe (catMaybes)
 import qualified Data.Text.Lazy as T
 import qualified Data.Text.Lazy.Encoding as E
 import qualified Data.Text.Lazy.IO as TIO
-import Numeric (showHex)
 import Pipes
 import Pipes.Concurrent
 import qualified Pipes.Prelude as PP
 import System.Exit
 import System.IO
 import System.Process.Typed (shell, withProcessWait, setStdin, setStdout, getStdout, closed, createPipe, readProcessStdout)
+import Control.Lens
 
-import Data.Colour.RGBSpace
 
 data Click = Click {
   name :: T.Text,
@@ -37,12 +35,14 @@ data Click = Click {
 } deriving Show
 $(deriveJSON defaultOptions ''Click)
 
-data BlockOutput = BlockOutput {
-  values :: HM.HashMap T.Text T.Text,
-  clickAction :: Maybe (Click -> BarIO ())
-}
-instance Show BlockOutput where
-  show BlockOutput{values} = show values
+data BlockOutput = BlockOutput
+  { _fullText :: BlockText
+  , _shortText :: Maybe BlockText
+  , _blockName :: Maybe T.Text
+  , _clickAction :: Maybe (Click -> BarIO ())
+  , _invalid :: Bool
+  }
+
 
 data PushMode = PushMode
 data PullMode = PullMode
@@ -60,10 +60,6 @@ type CachedBlock = Block CachedMode
 
 class IsBlock a where
   toCachedBlock :: a -> CachedBlock
-instance IsBlock PushBlock where
-  toCachedBlock = cachePushBlock
-instance IsBlock CachedBlock where
-  toCachedBlock = id
 
 class IsBlockMode a where
   exitBlock :: Block a
@@ -81,90 +77,34 @@ data Bar = Bar {
   requestBarUpdate :: IO (),
   newBlockChan :: TChan CachedBlock
 }
+makeLenses ''BlockOutput
+
+instance IsBlock PushBlock where
+  toCachedBlock = cachePushBlock
+instance IsBlock CachedBlock where
+  toCachedBlock = id
 
 data BarUpdateChannel = BarUpdateChannel (IO ())
 type BarUpdateEvent = Event.Event
 
 
-defaultColor :: T.Text
-defaultColor = "#969896"
-
-activeColor :: T.Text
-activeColor = "#ffffff"
-
-updatingColor :: T.Text
---updatingColor = "#444444"
-updatingColor = "#96989677"
-
-createBlock :: T.Text -> BlockOutput
-createBlock text = setColor defaultColor $ BlockOutput {
-  values = HM.singleton "full_text" text,
-  clickAction = Nothing
-}
+createBlock :: BlockText -> BlockOutput
+createBlock text = BlockOutput
+  { _fullText = text
+  , _shortText = Nothing
+  , _blockName = Nothing
+  , _clickAction = Nothing
+  , _invalid = False
+  }
 
 createErrorBlock :: T.Text -> BlockOutput
-createErrorBlock = setColor "ff0000" . createBlock
-
-setValue :: T.Text -> T.Text -> BlockOutput -> BlockOutput
-setValue key val block = block {
-  values = HM.insert key val (values block)
-}
-
-getValue :: T.Text -> BlockOutput -> Maybe T.Text
-getValue key block = HM.lookup key (values block)
-
-adjustValue :: (T.Text -> T.Text) -> T.Text -> BlockOutput -> BlockOutput
-adjustValue f k block = block {
-  values = HM.adjust f k (values block)
-}
+createErrorBlock = createBlock . importantText criticalImportant
 
 emptyBlock :: BlockOutput
-emptyBlock = createBlock ""
-
-shortText :: T.Text -> BlockOutput -> BlockOutput
-shortText = setValue "short_text"
-
-fullText :: T.Text -> BlockOutput -> BlockOutput
-fullText = setValue "full_text"
-
-getFullText :: BlockOutput -> T.Text
-getFullText = fromMaybe "" . getValue "full_text"
-
-setColor :: T.Text -> BlockOutput -> BlockOutput
-setColor = setValue "color"
-
-setBlockName :: T.Text -> BlockOutput -> BlockOutput
-setBlockName = setValue "name"
-
-getBlockName :: BlockOutput -> Maybe T.Text
-getBlockName = getValue "name"
-
-pangoMarkup :: BlockOutput -> BlockOutput
-pangoMarkup = setValue "markup" "pango"
-
-adjustText :: (T.Text -> T.Text) -> BlockOutput -> BlockOutput
-adjustText f = adjustValue f "full_text" . adjustValue f "short_text"
-
-coloredText :: T.Text -> T.Text -> T.Text
-coloredText color text = "<span color='" <> color <> "'>" <> text <> "</span>"
+emptyBlock = createBlock mempty
 
 addIcon :: T.Text -> BlockOutput -> BlockOutput
-addIcon icon block = prefixIcon "full_text" $ prefixIcon "short_text" block
-  where
-    prefixIcon = adjustValue ((icon <> " ") <>)
-
-removePango :: BlockOutput -> BlockOutput
-removePango block
-  | getValue "markup" block == Just "pango" = adjustText removePangoFromText $ block {
-      values = HM.delete "markup" (values block)
-    }
-  | otherwise = block
-  where
-    removePangoFromText :: T.Text -> T.Text
-    removePangoFromText text =
-      case parsePango text of
-        Left _ -> text
-        Right parsed -> removeFormatting parsed
+addIcon icon = over fullText $ (<>) . normalText $ icon <> " "
 
 modify :: (BlockOutput -> BlockOutput) -> Pipe BlockOutput BlockOutput BarIO r
 modify = PP.map
@@ -175,16 +115,19 @@ autoPadding = autoPadding' 0 0
     autoPadding' :: Int64 -> Int64 -> Pipe BlockOutput BlockOutput BarIO r
     autoPadding' fullLength shortLength = do
       block <- await
-      let values' = (values block)
-      let fullLength' = T.length $ HM.lookupDefault "" "full_text" values'
-      let shortLength' = T.length $ HM.lookupDefault "" "short_text" values'
-      let values'' = HM.adjust (<> (T.take (fullLength - fullLength') $ T.repeat ' ')) "full_text" values'
-      let values''' = HM.adjust (<> (T.take (shortLength - shortLength') $ T.repeat ' ')) "short_text" values''
-      yield block { values = values''' }
-      autoPadding' (max fullLength fullLength') (max shortLength shortLength')
+      let fullLength' = max fullLength . printedLength $ block^.fullText
+      let shortLength' = max shortLength . printedLength $ block^.shortText._Just -- TODO: ???
+      yield $ padFullText fullLength' . padShortText shortLength' $ block
+      autoPadding' fullLength' shortLength'
+    padString :: Int64 -> BlockText
+    padString len = normalText . T.take len . T.repeat $ ' '
+    padFullText :: Int64 -> BlockOutput -> BlockOutput
+    padFullText len = over fullText $ \s -> padString (len - printedLength s) <> s
+    padShortText :: Int64 -> BlockOutput -> BlockOutput
+    padShortText len = over (shortText._Just) $ \s -> padString (len - printedLength s) <> s
 
 cacheFromInput :: Input BlockOutput -> CachedBlock
-cacheFromInput input = const CachedMode <$> fromInput input
+cacheFromInput input = CachedMode <$ fromInput input
 
 -- | Create a shared interval. Takes a BarUpdateChannel to signal bar updates and an interval (in seconds).Data.Maybe
 -- Returns an IO action that can be used to attach blocks to the shared interval and an async that contains a reference to the scheduler thread.
@@ -223,7 +166,7 @@ sharedInterval seconds = do
           Left _ -> return (exitBlock, False)
           Right (blockOutput, blockProducer') -> do
             success <- atomically $ send output blockOutput {
-              clickAction = Just (updateClickHandler blockOutput)
+              _clickAction = Just (updateClickHandler blockOutput)
             }
             if success
               -- Store new BlockProducer back into MVar
@@ -234,8 +177,8 @@ sharedInterval seconds = do
         updateClickHandler :: BlockOutput -> Click -> BarIO ()
         updateClickHandler block _ = do
           -- Give user feedback that the block is updating
-          let outdatedBlock = setColor updatingColor $ removePango block
-          liftIO $ void $ atomically $ send output $ outdatedBlock
+          let outdatedBlock = block & invalid.~True
+          liftIO $ void $ atomically $ send output outdatedBlock
           -- Notify bar about changed block state to display the feedback
           updateBar
           -- Run a normal block update to update the block to the new value
@@ -262,7 +205,7 @@ sharedInterval seconds = do
       cacheFromInput input
 
 blockScript :: FilePath -> PullBlock
-blockScript path = forever $ yield =<< (lift $ blockScriptAction)
+blockScript path = forever $ yield =<< (lift blockScriptAction)
   where
     blockScriptAction :: BarIO BlockOutput
     blockScriptAction = do
@@ -271,33 +214,36 @@ blockScript path = forever $ yield =<< (lift $ blockScriptAction)
       (exitCode, output) <- liftIO $ readProcessStdout $ shell path
       case exitCode of
         ExitSuccess -> return $ case map E.decodeUtf8 (C8.lines output) of
-          (text:short:color:_) -> setColor color $ shortText short $ createScriptBlock text
-          (text:short:_) -> shortText short $ createScriptBlock text
+          -- TODO: Fix this, but how?
+          --   PangoSegments cannot have external formatting, so either allow that here,
+          --   or duplicate the function into ango and nonPango variants.
+          -- (text:short:color:_) -> setColor color $ shortText short $ createScriptBlock text
+          (text:short:_) -> shortText ?~ pangoText short $ createScriptBlock text
           (text:_) -> createScriptBlock text
           [] -> createScriptBlock "-"
-        (ExitFailure nr) -> return $ createErrorBlock $ "[" <> (T.pack $ show nr) <> "]"
+        (ExitFailure nr) -> return $ createErrorBlock $ "[" <> T.pack (show nr) <> "]"
     createScriptBlock :: T.Text -> BlockOutput
-    createScriptBlock text = pangoMarkup $ setBlockName (T.pack path) $ createBlock text
+    createScriptBlock text = blockName ?~ T.pack path $ createBlock . pangoText $ text
 
 startPersistentBlockScript :: FilePath -> CachedBlock
 -- This is only using 'CachedBlock' because the code was already written and tested
 -- This could probably be massively simplified by using the new 'pushBlock'
 startPersistentBlockScript path = do
-  bar <- lift $ ask
+  bar <- lift ask
   do
-    (output, input, seal) <- liftIO $ spawn' $ latest $ emptyBlock
-    initialDataEvent <- liftIO $ Event.new
+    (output, input, seal) <- liftIO $ spawn' $ latest emptyBlock
+    initialDataEvent <- liftIO Event.new
     task <- liftIO $ async $ do
       let processConfig = setStdin closed $ setStdout createPipe $ shell path
       finally (
         catch (
           withProcessWait processConfig $ \ process -> do
             let handle = getStdout process
-            runEffect $ (fromHandle bar handle) >-> signalFirstBlock initialDataEvent >-> toOutput output
+            runEffect $ fromHandle bar handle >-> signalFirstBlock initialDataEvent >-> toOutput output
           )
           ( \ e ->
             -- output error
-            runEffect $ (yield $ createErrorBlock $ "[" <> (T.pack $ show (e :: IOException)) <> "]") >-> signalFirstBlock initialDataEvent >-> toOutput output
+            runEffect $ yield (createErrorBlock $ "[" <> T.pack (show (e :: IOException)) <> "]") >-> signalFirstBlock initialDataEvent >-> toOutput output
           )
         )
         (atomically seal)
@@ -315,22 +261,8 @@ startPersistentBlockScript path = do
     fromHandle :: Bar -> Handle -> Producer BlockOutput IO ()
     fromHandle bar handle = forever $ do
       line <- lift $ TIO.hGetLine handle
-      yield $ pangoMarkup $ createBlock line
+      yield $ createBlock . pangoText $ line
       lift $ updateBar' bar
-
-pangoColor :: RGB Double -> T.Text
-pangoColor (RGB r g b) =
-  let r' = hexColorComponent r
-      g' = hexColorComponent g
-      b' = hexColorComponent b
-  in "#" <> r' <> g' <> b'
-  where
-    hexColorComponent :: Double -> T.Text
-    hexColorComponent val = paddedHexComponent $ T.pack $ showHex (max 0 $ min 255 $ (truncate (val * 255) :: Int)) ""
-    paddedHexComponent hex =
-      let len = 2 - T.length hex
-          padding = if len == 1 then "0" else ""
-      in padding <> hex
 
 
 addBlock :: IsBlock a => a -> BarIO ()
@@ -370,7 +302,7 @@ cachePushBlock pushBlock = lift (next pushBlock) >>= either (const exitBlock) wi
       -- The void is discarding the boolean result that indicates if the mailbox is sealed
       -- This is ok because a cached block is never sealed from the receiving side
       liftIO $ atomically $ void $ send output $ Just blockOutput
-      lift $ updateBar
+      lift updateBar
     terminateOnMaybe :: Producer (Maybe BlockOutput) BarIO () -> Producer BlockOutput BarIO CachedMode
     terminateOnMaybe p = do
       eitherMaybeValue <- lift $ next p
