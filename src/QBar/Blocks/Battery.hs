@@ -122,10 +122,10 @@ batteryBlockOutput isPlugged bs = (shortText.~shortText') . createBlock <$> full
 
 batteryImportance :: [BatteryState] -> Importance
 batteryImportance batteryStates
-    | percentage < 10 =  percentage       / 10 + 3
-    | percentage < 35 = (percentage - 10) / 25 + 2
-    | percentage < 75 = (percentage - 35) / 40 + 1
-    | otherwise       = (percentage - 75) / 25 + 0
+    | percentage < 10 = 4 -  percentage       / 10
+    | percentage < 35 = 3 - (percentage - 10) / 25
+    | percentage < 75 = 2 - (percentage - 35) / 40
+    | otherwise       = 1 - (percentage - 75) / 25
   where
     percentage :: Float
     percentage = batteryPercentage batteryStates
