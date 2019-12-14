@@ -1,3 +1,5 @@
+{-# LANGUAGE ScopedTypeVariables #-}
+
 module QBar.BlockText where
 
 import qualified Data.Text.Lazy as T
@@ -26,14 +28,15 @@ data BlockTextSegment = BlockTextSegment {
 
 type Importance = Float
 
+
 normalImportant :: Importance
-normalImportant = 0
+normalImportant = 1
 warnImportant :: Importance
-warnImportant = 1
+warnImportant = 2
 errorImportant :: Importance
-errorImportant = 2
+errorImportant = 3
 criticalImportant :: Importance
-criticalImportant = 3
+criticalImportant = 4
 
 isCritical :: Importance -> Bool
 isCritical i
@@ -56,6 +59,38 @@ isNormal i
   | isError i = False
   | isWarning i = False
   | otherwise = True
+
+toImportance :: Real a => (a, a, a, a, a, a) -> a -> Importance
+toImportance (tMax, tCrit, tErr, tWarn, tNorm, tMin) =
+  toImportance' (Just tMax, tCrit, tErr, tWarn, tNorm, Just tMin)
+
+toImportance' :: forall a. Real a => (Maybe a, a, a, a, a, Maybe a) -> a -> Importance
+toImportance' (tMax, tCrit, tErr, tWarn, tNorm, tMin) val
+  | tCrit <= val = 4 + valueCrit      tMax  tCrit val
+  | tErr  <= val = 3 + linearMatch    tCrit tErr  val
+  | tWarn <= val = 2 + linearMatch    tErr  tWarn val
+  | tNorm <= val = 1 + linearMatch    tWarn tNorm val
+  | otherwise    = 0 + valueOtherwise tNorm tMin  val
+  where
+    e :: Importance
+    e = exp 1
+    linearMatch :: a -> a -> a -> Importance
+    linearMatch u l v = frac (v - l) (u - l)
+    logarithmicMatch :: a -> a -> Importance
+    logarithmicMatch l u = 1 - 1 / log (e + realToFrac (u - l))
+    frac :: a -> a -> Importance
+    frac a b = realToFrac a / realToFrac b
+    valueCrit :: Maybe a -> a -> a -> Importance
+    valueCrit (Just tMax') tCrit' v
+      | tMax' > v = linearMatch tMax' tCrit' v
+      | otherwise = 1
+    valueCrit Nothing tCrit' v = logarithmicMatch tCrit' v
+    valueOtherwise :: a -> Maybe a -> a -> Importance
+    valueOtherwise tNorm' (Just tMin') v
+      | tMin' < v = linearMatch tNorm' tMin' v
+      | otherwise = 0
+    valueOtherwise tNorm' Nothing v = 1 - logarithmicMatch v tNorm'
+
 
 removePango :: BlockText -> T.Text
 removePango (BlockText b) = foldr ((<>) . removePangoFromSegment) "" b

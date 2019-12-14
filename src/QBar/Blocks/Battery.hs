@@ -106,29 +106,22 @@ batteryBlockOutput isPlugged bs = (shortText.~shortText') . createBlock <$> full
 
     perSingleBatteryArrow :: BatteryState -> T.Text
     perSingleBatteryArrow b
-      | BatteryCharging <- _status b = "⬆"
-      | BatteryDischarging <- _status b = "⬇"
+      | BatteryCharging <- _status b = "▲"
+      | BatteryDischarging <- _status b = "▼"
       | otherwise = T.empty
 
     perSingleBattery :: BatteryState -> BlockText
-    perSingleBattery b = importantText (batteryImportance bs) $ perSingleBatteryArrow b <> (formatFloatN 0 . batteryPercentage) [b] <> "%"
+    perSingleBattery b = importantText (batteryImportance [b]) $ perSingleBatteryArrow b <> (formatFloatN 0 . batteryPercentage) [b] <> "%"
 
     overallPercentage :: BlockText
-    overallPercentage = activeImportantText (batteryImportance bs) $ (formatFloatN 0 . batteryPercentage $ bs) <> "%"
+    overallPercentage = mkText (not isPlugged) (batteryImportance bs) $ (formatFloatN 0 . batteryPercentage $ bs) <> "%"
 
     optionalOverallEstimate :: BlockText
     optionalOverallEstimate = maybe mempty (\s -> surroundWith normalText " (" ")" s) . batteryEstimateFormated $ bs
 
 
 batteryImportance :: [BatteryState] -> Importance
-batteryImportance batteryStates
-    | percentage < 10 = 4 -  percentage       / 10
-    | percentage < 35 = 3 - (percentage - 10) / 25
-    | percentage < 75 = 2 - (percentage - 35) / 40
-    | otherwise       = 1 - (percentage - 75) / 25
-  where
-    percentage :: Float
-    percentage = batteryPercentage batteryStates
+batteryImportance = toImportance (100, 90, 80, 60, 50, 0) . (100-) . batteryPercentage
 
 
 batteryPercentage :: [BatteryState] -> Float
