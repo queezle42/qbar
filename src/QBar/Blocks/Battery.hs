@@ -72,11 +72,10 @@ batteryBlock = do
     apiPath = "/sys/class/power_supply"
 
     getPluggedState :: IO Bool
-    getPluggedState = do
-      stateAC <- getPluggedStateFromFile "/sys/class/power_supply/AC/online"
-      stateACAD <- fromMaybe False <$> getPluggedStateFromFile "/sys/class/power_supply/ACAD/online"
-      return $ fromMaybe stateACAD stateAC
+    getPluggedState = or . catMaybes <$> mapM getPluggedStateFromFile powerSupplyPaths
       where
+        powerSupplyPaths :: [FilePath]
+        powerSupplyPaths = ["/sys/class/power_supply/AC/online", "/sys/class/power_supply/ACAD/online"]
         getPluggedStateFromFile :: FilePath -> IO (Maybe Bool)
         getPluggedStateFromFile f = do
           line <- tryMaybe $ T.strip <$> TIO.readFile f
