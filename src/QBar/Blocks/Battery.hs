@@ -73,10 +73,16 @@ batteryBlock = do
 
     getPluggedState :: IO Bool
     getPluggedState = do
-      line <- tryMaybe $ T.strip <$> TIO.readFile "/sys/class/power_supply/AC/online"
-      case line of
-        Just "1" -> return True
-        _ -> return False
+      stateAC <- getPluggedStateFromFile "/sys/class/power_supply/AC/online"
+      stateACAD <- fromMaybe False <$> getPluggedStateFromFile "/sys/class/power_supply/ACAD/online"
+      return $ fromMaybe stateACAD stateAC
+      where
+        getPluggedStateFromFile :: FilePath -> IO (Maybe Bool)
+        getPluggedStateFromFile f = do
+          line <- tryMaybe $ T.strip <$> TIO.readFile f
+          case line of
+            Just "1" -> return . return $ True
+            _ -> return . return $ False
 
 
 batteryBlockOutput :: Bool -> [BatteryState] -> Maybe BlockOutput
