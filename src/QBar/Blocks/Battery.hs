@@ -65,7 +65,7 @@ batteryBlock = do
   batteryPaths <- liftIO $ map ((apiPath <> "/") <>) . filter (T.isPrefixOf "BAT" . T.pack) <$> getDirectoryContents apiPath
   batteryStates <- liftIO $ mapM getBatteryState batteryPaths
   isPlugged <- liftIO getPluggedState
-  yield $ fromMaybe emptyBlock (batteryBlockOutput isPlugged $ catMaybes batteryStates)
+  yield $ batteryBlockOutput isPlugged $ catMaybes batteryStates
   batteryBlock
   where
     apiPath :: FilePath

@@ -36,16 +36,16 @@ data Handle = Handle {
 
 renderIndicator :: CachedBlock
 -- Using 'cachedBlock' is a hack to actually get the block to update on every bar update (by doing this it will not get a cache later in the pipeline).
-renderIndicator = forever $ each $ map (createBlock . normalText) ["/", "-", "\\", "|"]
+renderIndicator = forever $ each $ map (Just . createBlock . normalText) ["/", "-", "\\", "|"]
 
-runBlock :: CachedBlock -> BarIO (Maybe (BlockOutput, CachedBlock))
+runBlock :: CachedBlock -> BarIO (Maybe (Maybe BlockOutput, CachedBlock))
 runBlock producer = do
   next' <- next producer
   return $ case next' of
     Left _ -> Nothing
     Right (block, newProducer) -> Just (block, newProducer)
 
-runBlocks :: [CachedBlock] -> BarIO ([BlockOutput], [CachedBlock])
+runBlocks :: [CachedBlock] -> BarIO ([Maybe BlockOutput], [CachedBlock])
 runBlocks block = unzip . catMaybes <$> mapM runBlock block
 
 data RenderBlock = RenderBlock T.Text (Maybe T.Text) (Maybe T.Text)
@@ -92,9 +92,10 @@ renderLoop options handle@Handle{handleActiveFilter} barUpdateEvent previousBarO
 
       renderLoop' currentBarOutput blocks''
 
-renderLine :: MainOptions -> Handle -> Filter -> [BlockOutput] -> BS.ByteString -> IO BS.ByteString
-renderLine MainOptions{verbose} Handle{handleActionList} blockFilter blocks previousEncodedOutput = do
+renderLine :: MainOptions -> Handle -> Filter -> [Maybe BlockOutput] -> BS.ByteString -> IO BS.ByteString
+renderLine MainOptions{verbose} Handle{handleActionList} blockFilter blocks' previousEncodedOutput = do
   time <- fromRational . toRational <$> getPOSIXTime
+  let blocks = catMaybes blocks'
   let filteredBlocks = applyFilter blockFilter time blocks
   -- let encodedOutput = encode $ map values filteredBlocks
   let encodedOutput = encodeOutput filteredBlocks
@@ -123,7 +124,7 @@ renderLine MainOptions{verbose} Handle{handleActionList} blockFilter blocks prev
     encodeBlock :: BlockOutput -> (T.Text, Maybe T.Text) -> RenderBlock
     encodeBlock b (fullText', shortText') = RenderBlock fullText' shortText' (b^.blockName)
     clickActionList :: [(T.Text, Click -> BarIO ())]
-    clickActionList = mapMaybe getClickAction blocks
+    clickActionList = mapMaybe getClickAction . catMaybes $ blocks'
     getClickAction :: BlockOutput -> Maybe (T.Text, Click -> BarIO ())
     getClickAction block = do
       blockName' <- block^.blockName
@@ -179,9 +180,9 @@ installSignalHandlers = do
 renderInitialBlocks :: MainOptions -> Handle -> Filter -> IO C8.ByteString
 renderInitialBlocks options handle blockFilter = do
   date <- dateBlockOutput
-  let initialBlocks = [date]
+  let initialBlocks = [Just date]
   -- Attach spinner indicator when verbose flag is set
-  let initialBlocks' = if indicator options then initialBlocks <> [createBlock . normalText $ "*"] else initialBlocks
+  let initialBlocks' = if indicator options then initialBlocks <> [Just . createBlock . normalText $ "*"] else initialBlocks
   -- Render initial time block so the bar is not empty after startup
   renderLine options handle blockFilter initialBlocks' ""
 

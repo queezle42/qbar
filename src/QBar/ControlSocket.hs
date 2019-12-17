@@ -113,5 +113,5 @@ handleBlockStream producer = do
   where
     handleParsedBlock :: Producer ByteString IO () -> String -> PushBlock
     handleParsedBlock leftovers update = do
-      yield $ createBlock . normalText $ TL.pack update
+      yield $ Just . createBlock . normalText $ TL.pack update
       handleBlockStream leftovers
