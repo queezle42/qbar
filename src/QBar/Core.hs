@@ -110,16 +110,21 @@ modify :: (BlockOutput -> BlockOutput)
        -> Pipe (Maybe BlockOutput) (Maybe BlockOutput) BarIO r
 modify x = PP.map (x <$>)
 
-autoPadding :: Pipe BlockOutput BlockOutput BarIO r
+autoPadding :: Pipe (Maybe BlockOutput) (Maybe BlockOutput) BarIO r
 autoPadding = autoPadding' 0 0
   where
-    autoPadding' :: Int64 -> Int64 -> Pipe BlockOutput BlockOutput BarIO r
+    autoPadding' :: Int64 -> Int64 -> Pipe (Maybe BlockOutput) (Maybe BlockOutput) BarIO r
     autoPadding' fullLength shortLength = do
-      block <- await
-      let fullLength' = max fullLength . printedLength $ block^.fullText
-      let shortLength' = max shortLength . printedLength $ block^.shortText._Just -- TODO: ???
-      yield $ padFullText fullLength' . padShortText shortLength' $ block
-      autoPadding' fullLength' shortLength'
+      maybeBlock <- await
+      case maybeBlock of
+        Just block -> do
+          let fullLength' = max fullLength . printedLength $ block^.fullText
+          let shortLength' = max shortLength . printedLength $ block^.shortText._Just -- TODO: ???
+          yield $ Just $ padFullText fullLength' . padShortText shortLength' $ block
+          autoPadding' fullLength' shortLength'
+        Nothing -> do
+          yield Nothing
+          autoPadding' 0 0
     padString :: Int64 -> BlockText
     padString len = normalText . T.take len . T.repeat $ ' '
     padFullText :: Int64 -> BlockOutput -> BlockOutput
