@@ -9,7 +9,7 @@ import QBar.BlockText
 import QBar.Themes
 
 import Control.Monad (forever, when, unless)
-import Control.Monad.Reader (runReaderT, ask)
+import Control.Monad.Reader (ask)
 import Control.Monad.STM (atomically)
 import Control.Concurrent (threadDelay, forkFinally)
 import Control.Concurrent.Async
@@ -154,7 +154,7 @@ handleStdin options actionListIORef = do
           clickActionList <- readIORef actionListIORef
           let maybeClickAction = getClickAction clickActionList click
           case maybeClickAction of
-            Just clickAction' -> async (runReaderT (clickAction' click) bar) >>= link
+            Just clickAction' -> async (runBarIO bar (clickAction' click)) >>= link
             Nothing -> return ()
         Nothing -> return ()
 
@@ -214,13 +214,13 @@ runBarConfiguration defaultBarConfig options = do
 
 
   -- Fork stdin handler
-  void $ forkFinally (runReaderT (handleStdin options actionList) bar) (\result -> hPutStrLn stderr $ "handleStdin failed: " <> show result)
+  void $ forkFinally (runBarIO bar (handleStdin options actionList)) (\result -> hPutStrLn stderr $ "handleStdin failed: " <> show result)
 
 
-  runReaderT loadBlocks bar
+  runBarIO bar loadBlocks
 
   -- Install signal handler for SIGCONT
-  runReaderT installSignalHandlers bar
+  runBarIO bar installSignalHandlers
 
   -- Create control socket
   commandChan <- createCommandChan
@@ -236,7 +236,7 @@ runBarConfiguration defaultBarConfig options = do
     updateBar' bar
   link socketUpdateAsync
 
-  runReaderT (renderLoop options handle barUpdateEvent initialOutput newBlockChan) bar
+  runBarIO bar (renderLoop options handle barUpdateEvent initialOutput newBlockChan)
   where
     loadBlocks :: BarIO ()
     loadBlocks = do

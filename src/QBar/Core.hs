@@ -88,6 +88,9 @@ data BarUpdateChannel = BarUpdateChannel (IO ())
 type BarUpdateEvent = Event.Event
 
 
+runBarIO :: Bar -> BarIO r -> IO r
+runBarIO bar action = runReaderT action bar
+
 createBlock :: BlockText -> BlockOutput
 createBlock text = BlockOutput
   { _fullText = text
@@ -151,7 +154,7 @@ sharedInterval seconds = do
       -- Updates all client blocks
       -- If send returns 'False' the clients mailbox has been closed, so it is removed
       bar <- ask
-      liftIO $ modifyMVar_ clientsMVar $ fmap catMaybes . mapConcurrently (\r -> runReaderT (runAndFilterClient r) bar)
+      liftIO $ modifyMVar_ clientsMVar $ fmap catMaybes . mapConcurrently (\r -> runBarIO bar $ runAndFilterClient r)
       -- Then update the bar
       updateBar
 
