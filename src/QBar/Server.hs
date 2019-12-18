@@ -56,7 +56,7 @@ instance ToJSON RenderBlock where
     where
       fullText'' = [ "full_text" .= fullText' ]
       shortText'' = fromMaybe (\s -> ["short_text".=s]) mempty shortText'
-      blockName'' = fromMaybe (\s -> ["block_name".=s]) mempty blockName'
+      blockName'' = fromMaybe (\s -> ["name".=s]) mempty blockName'
       pango'' = [ "markup" .= ("pango" :: T.Text) ]
 
 
