@@ -38,6 +38,7 @@ dependencies:
 - pipes-concurrency
 - pipes-network
 - pipes-parse
+- pipes-safe
 - stm
 - text
 - time

@@ -9,7 +9,6 @@ import QBar.BlockText
 import QBar.Themes
 
 import Control.Monad (forever, when, unless)
-import Control.Monad.Reader (ask)
 import Control.Monad.STM (atomically)
 import Control.Concurrent (threadDelay, forkFinally)
 import Control.Concurrent.Async
@@ -138,7 +137,7 @@ createBarUpdateChannel = do
 
 handleStdin :: MainOptions -> IORef [(T.Text, Click -> BarIO ())] -> BarIO ()
 handleStdin options actionListIORef = do
-  bar <- ask
+  bar <- askBar
   liftIO $ forever $ do
     line <- BSSC8.hGetLine stdin
 
@@ -169,7 +168,7 @@ handleStdin options actionListIORef = do
 
 installSignalHandlers :: BarIO ()
 installSignalHandlers = do
-  bar <- ask
+  bar <- askBar
   liftIO $ void $ installHandler sigCONT (Catch (sigContAction bar)) Nothing
   where
     sigContAction :: Bar -> IO ()

@@ -7,7 +7,7 @@ import QBar.BlockText
 
 import Control.Exception (catch, finally, IOException)
 import Control.Monad (forever)
-import Control.Monad.Reader (ReaderT, runReaderT, ask, asks)
+import Control.Monad.Reader (ReaderT, runReaderT, ask)
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.Async
 import Control.Concurrent.Event as Event
@@ -22,6 +22,7 @@ import qualified Data.Text.Lazy.Encoding as E
 import qualified Data.Text.Lazy.IO as TIO
 import Pipes
 import Pipes.Concurrent
+import Pipes.Safe (SafeT, runSafeT)
 import qualified Pipes.Prelude as PP
 import System.Exit
 import System.IO
@@ -71,7 +72,7 @@ instance IsBlockMode CachedMode where
   exitBlock = return CachedMode
 
 
-type BarIO = ReaderT Bar IO
+type BarIO = SafeT (ReaderT Bar IO)
 
 data Bar = Bar {
   requestBarUpdate :: IO (),
@@ -89,7 +90,10 @@ type BarUpdateEvent = Event.Event
 
 
 runBarIO :: Bar -> BarIO r -> IO r
-runBarIO bar action = runReaderT action bar
+runBarIO bar action = runReaderT (runSafeT action) bar
+
+askBar :: BarIO Bar
+askBar = lift ask
 
 createBlock :: BlockText -> BlockOutput
 createBlock text = BlockOutput
@@ -153,7 +157,7 @@ sharedInterval seconds = do
       liftIO $ threadDelay $ seconds * 1000000
       -- Updates all client blocks
       -- If send returns 'False' the clients mailbox has been closed, so it is removed
-      bar <- ask
+      bar <- askBar
       liftIO $ modifyMVar_ clientsMVar $ fmap catMaybes . mapConcurrently (\r -> runBarIO bar $ runAndFilterClient r)
       -- Then update the bar
       updateBar
@@ -168,9 +172,9 @@ sharedInterval seconds = do
       return $ if result then Just client else Nothing
     runClient :: (MVar PullBlock, Output (Maybe BlockOutput)) -> BarIO Bool
     runClient (blockProducerMVar, output) = do
-      bar <- ask
+      bar <- askBar
       liftIO $ modifyMVar blockProducerMVar $ \blockProducer -> do
-        result <- runReaderT (next blockProducer) bar
+        result <- runReaderT (runSafeT $ next blockProducer) bar
         case result of
           Left _ -> return (exitBlock, False)
           Right (blockOutput, blockProducer') -> do
@@ -237,9 +241,9 @@ startPersistentBlockScript :: FilePath -> CachedBlock
 -- This is only using 'CachedBlock' because the code was already written and tested
 -- This could probably be massively simplified by using the new 'pushBlock'
 startPersistentBlockScript path = do
-  bar <- lift ask
+  bar <- lift askBar
   do
-    (output, input, seal) <- liftIO $ spawn' $ latest $ Just emptyBlock
+    (output, input, seal) <- liftIO $ spawn' $ latest $ Nothing
     initialDataEvent <- liftIO Event.new
     task <- liftIO $ async $ do
       let processConfig = setStdin closed $ setStdout createPipe $ shell path
@@ -275,19 +279,19 @@ startPersistentBlockScript path = do
 
 addBlock :: IsBlock a => a -> BarIO ()
 addBlock block = do
-  newBlockChan' <- asks newBlockChan
+  newBlockChan' <- newBlockChan <$> askBar
   liftIO $ atomically $ writeTChan newBlockChan' $ toCachedBlock block
 
 updateBar :: BarIO ()
-updateBar = liftIO =<< asks requestBarUpdate
+updateBar = liftIO =<< requestBarUpdate <$> askBar
 
 updateBar' :: Bar -> IO ()
-updateBar' = runReaderT updateBar
+updateBar' bar = runBarIO bar updateBar
 
 barAsync :: BarIO a -> BarIO (Async a)
 barAsync action = do
-  bar <- ask
-  lift $ async $ runReaderT action bar
+  bar <- askBar
+  liftIO $ async $ runBarIO bar action
 
 cachePushBlock :: PushBlock -> CachedBlock
 cachePushBlock pushBlock = lift (next pushBlock) >>= either (const exitBlock) withInitialBlock
