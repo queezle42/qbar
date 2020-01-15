@@ -5,7 +5,7 @@ module QBar.Core where
 
 import QBar.BlockText
 
-import Control.Exception (catch, finally, IOException)
+import Control.Exception (IOException)
 import Control.Monad (forever)
 import Control.Monad.Reader (ReaderT, runReaderT, ask)
 import Control.Concurrent (threadDelay)
@@ -27,7 +27,7 @@ import qualified Pipes.Prelude as PP
 import System.Exit
 import System.IO
 import System.Process.Typed (Process, shell, setStdin, setStdout,
-  getStdout, closed, createPipe, withProcessWait, readProcessStdout, startProcess, stopProcess)
+  getStdout, closed, createPipe, readProcessStdout, startProcess, stopProcess)
 import Control.Lens
 
 
@@ -237,45 +237,6 @@ blockScript path = forever $ yield . Just =<< (lift blockScriptAction)
         (ExitFailure nr) -> return $ createErrorBlock $ "[" <> T.pack (show nr) <> "]"
     createScriptBlock :: T.Text -> BlockOutput
     createScriptBlock text = blockName ?~ T.pack path $ createBlock . pangoText $ text
-
-startPersistentBlockScript' :: FilePath -> CachedBlock
--- This is only using 'CachedBlock' because the code was already written and tested
--- This could probably be massively simplified by using the new 'pushBlock'
-startPersistentBlockScript' path = do
-  bar <- lift askBar
-  do
-    (output, input, seal) <- liftIO $ spawn' $ latest $ Nothing
-    initialDataEvent <- liftIO Event.new
-    task <- liftIO $ async $ do
-      let processConfig = setStdin closed $ setStdout createPipe $ shell path
-      finally (
-        catch (
-          withProcessWait processConfig $ \ process -> do
-            let handle = getStdout process
-            runEffect $ fromHandle bar handle >-> signalFirstBlock initialDataEvent >-> toOutput output
-          )
-          ( \ e ->
-            -- output error
-            runEffect $ yield (Just . createErrorBlock $ "[" <> T.pack (show (e :: IOException)) <> "]") >-> signalFirstBlock initialDataEvent >-> toOutput output
-          )
-        )
-        (atomically seal)
-    liftIO $ link task
-    liftIO $ Event.wait initialDataEvent
-    cacheFromInput input
-  where
-    signalFirstBlock :: Event.Event -> Pipe (Maybe BlockOutput) (Maybe BlockOutput) IO ()
-    signalFirstBlock event = do
-      -- Await first block
-      await >>= yield
-      lift $ Event.set event
-      -- Replace with cat
-      cat
-    fromHandle :: Bar -> Handle -> Producer (Maybe BlockOutput) IO ()
-    fromHandle bar handle = forever $ do
-      line <- lift $ TIO.hGetLine handle
-      yield $ Just . createBlock . pangoText $ line
-      lift $ updateBar' bar
 
 startPersistentBlockScript :: FilePath -> PushBlock
 -- The outer catchP only catches errors that occur during process creation
