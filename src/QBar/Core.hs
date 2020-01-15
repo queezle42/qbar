@@ -22,11 +22,12 @@ import qualified Data.Text.Lazy.Encoding as E
 import qualified Data.Text.Lazy.IO as TIO
 import Pipes
 import Pipes.Concurrent
-import Pipes.Safe (SafeT, runSafeT)
+import Pipes.Safe (SafeT, catchP, runSafeT)
 import qualified Pipes.Prelude as PP
 import System.Exit
 import System.IO
-import System.Process.Typed (shell, withProcessWait, setStdin, setStdout, getStdout, closed, createPipe, readProcessStdout)
+import System.Process.Typed (Process, shell, setStdin, setStdout,
+  getStdout, closed, createPipe, withProcessWait, readProcessStdout, startProcess, stopProcess)
 import Control.Lens
 
 
@@ -237,10 +238,10 @@ blockScript path = forever $ yield . Just =<< (lift blockScriptAction)
     createScriptBlock :: T.Text -> BlockOutput
     createScriptBlock text = blockName ?~ T.pack path $ createBlock . pangoText $ text
 
-startPersistentBlockScript :: FilePath -> CachedBlock
+startPersistentBlockScript' :: FilePath -> CachedBlock
 -- This is only using 'CachedBlock' because the code was already written and tested
 -- This could probably be massively simplified by using the new 'pushBlock'
-startPersistentBlockScript path = do
+startPersistentBlockScript' path = do
   bar <- lift askBar
   do
     (output, input, seal) <- liftIO $ spawn' $ latest $ Nothing
@@ -276,6 +277,30 @@ startPersistentBlockScript path = do
       yield $ Just . createBlock . pangoText $ line
       lift $ updateBar' bar
 
+startPersistentBlockScript :: FilePath -> PushBlock
+-- The outer catchP only catches errors that occur during process creation
+startPersistentBlockScript path = catchP startScriptProcess handleError
+  where
+    handleError :: IOException -> PushBlock
+    handleError e = do
+      yield . Just . createErrorBlock $ "[" <> T.pack (show e) <> "]"
+      return PushMode
+    handleErrorWithProcess :: (Process i o e) -> IOException -> PushBlock
+    handleErrorWithProcess process e = do
+      stopProcess process
+      handleError e
+    startScriptProcess :: PushBlock
+    startScriptProcess = do
+      let processConfig = setStdin closed $ setStdout createPipe $ shell path
+      process <- startProcess processConfig
+      -- The inner catchP catches errors that happen after the process has been created
+      -- This handler will also make sure the process is stopped
+      catchP (blockFromHandle $ getStdout process) (handleErrorWithProcess process)
+    blockFromHandle :: Handle -> PushBlock
+    blockFromHandle handle = forever $ do
+      line <- liftIO $ TIO.hGetLine handle
+      yield $ Just . createBlock . pangoText $ line
+      lift updateBar
 
 addBlock :: IsBlock a => a -> BarIO ()
 addBlock block = do
