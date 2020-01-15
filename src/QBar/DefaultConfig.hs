@@ -15,7 +15,7 @@ generateDefaultBarConfig = do
   systemInfoInterval <- sharedInterval 10
 
   let todo = systemInfoInterval (blockScript $ blockLocation "todo")
-  let wifi = systemInfoInterval (blockScript $ blockLocation "wifi2 wlan") >-> modify (addIcon "📡\xFE0E")
+  let wifi = systemInfoInterval (blockScript $ blockLocation "wifi2") >-> modify (addIcon "📡\xFE0E")
   let networkEnvironment = systemInfoInterval (blockScript $ blockLocation "network-environment")
   let cpu = systemInfoInterval (blockScript $ blockLocation "cpu_usage") >-> modify ((blockName?~"cpu") . addIcon "💻\xFE0E") >-> autoPadding
   let ram = systemInfoInterval (blockScript $ blockLocation "memory") >-> modify (addIcon "🐏\xFE0E") >-> autoPadding
