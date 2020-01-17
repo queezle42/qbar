@@ -9,6 +9,7 @@ import QBar.Core
 import QBar.Filter
 import QBar.BlockText
 
+import Control.Exception (handle)
 import Control.Monad (forever, void, when)
 import Control.Monad.STM (atomically)
 import Control.Concurrent (forkFinally)
@@ -17,6 +18,7 @@ import Control.Concurrent.STM.TChan (TChan, writeTChan)
 import Data.Aeson.TH
 import Data.ByteString (ByteString)
 import Data.Either (either)
+import Data.Maybe (maybe)
 import Data.Text.Lazy (Text, pack)
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as TL
@@ -48,11 +50,24 @@ ipcSocketAddress MainOptions{socketLocation} = maybe defaultSocketPath (return .
   where
     defaultSocketPath :: IO FilePath
     defaultSocketPath = do
-      xdgRuntimeDir <- getEnv "XDG_RUNTIME_DIR"
-      waylandDisplay <- getEnv "WAYLAND_DISPLAY"
-      -- TODO: fallback to I3_SOCKET_PATH if WAYLAND_DISPLAY is not set.
-      -- If both are not set it might be useful to fall back to XDG_RUNTIME_DIR/qbar, so qbar can run headless (eg. for tests)
-      return $ xdgRuntimeDir </> waylandDisplay <> "-qbar"
+      waylandSocketPath' <- waylandSocketPath
+      maybe (maybe headlessSocketPath return =<< i3SocketPath) return waylandSocketPath'
+      where
+        waylandSocketPath :: IO (Maybe FilePath)
+        waylandSocketPath = handleEnvError $ do
+          xdgRuntimeDir <- getEnv "XDG_RUNTIME_DIR"
+          waylandDisplay <- getEnv "WAYLAND_DISPLAY"
+          return $ xdgRuntimeDir </> waylandDisplay <> "-qbar"
+        i3SocketPath :: IO (Maybe FilePath)
+        i3SocketPath = handleEnvError $ do
+          i3SocketPath' <- getEnv "I3_SOCKET_PATH"
+          return $ i3SocketPath' <> "-qbar"
+        headlessSocketPath :: IO FilePath
+        headlessSocketPath = do
+          xdgRuntimeDir <- getEnv "XDG_RUNTIME_DIR"
+          return $ xdgRuntimeDir </> "qbar"
+    handleEnvError :: IO FilePath -> IO (Maybe FilePath)
+    handleEnvError = handle (const $ return Nothing :: IOError -> IO (Maybe FilePath)) . fmap Just
 
 sendIpc :: MainOptions -> Command -> IO ()
 sendIpc options@MainOptions{verbose} request = do
