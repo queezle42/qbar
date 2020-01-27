@@ -1,7 +1,9 @@
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module QBar.BlockText where
 
+import Data.Aeson.TH
 import qualified Data.Text.Lazy as T
 import Data.Int (Int64)
 import QBar.Pango
@@ -27,6 +29,9 @@ data BlockTextSegment = BlockTextSegment {
   deriving (Show)
 
 type Importance = Float
+
+$(deriveJSON defaultOptions ''BlockTextSegment)
+$(deriveJSON defaultOptions ''BlockText)
 
 
 normalImportant :: Importance

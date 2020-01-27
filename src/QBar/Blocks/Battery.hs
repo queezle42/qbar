@@ -65,7 +65,7 @@ batteryBlock = do
   batteryPaths <- liftIO $ map ((apiPath <> "/") <>) . filter (T.isPrefixOf "BAT" . T.pack) <$> getDirectoryContents apiPath
   batteryStates <- liftIO $ mapM getBatteryState batteryPaths
   isPlugged <- liftIO getPluggedState
-  yield $ batteryBlockOutput isPlugged $ catMaybes batteryStates
+  updateBatteryBlock isPlugged $ catMaybes batteryStates
   batteryBlock
   where
     apiPath :: FilePath
@@ -84,17 +84,15 @@ batteryBlock = do
             _ -> return . return $ False
 
 
-batteryBlockOutput :: Bool -> [BatteryState] -> Maybe BlockOutput
-batteryBlockOutput isPlugged bs = (shortText.~shortText') . createBlock <$> fullText'
+updateBatteryBlock :: Bool -> [BatteryState] -> Block ()
+updateBatteryBlock _ [] = yield Nothing
+updateBatteryBlock isPlugged bs = updateBlock $ (shortText.~shortText') $ createBlock fullText'
   where
-    fullText' :: Maybe BlockText
-    fullText'
-      | null bs = Nothing
-      | otherwise = Just $ normalText (batteryIcon <> " ") <> overallPercentage <> optionalEachBattery <> optionalOverallEstimate
+    fullText' :: BlockText
+    fullText' = normalText (batteryIcon <> " ") <> overallPercentage <> optionalEachBattery <> optionalOverallEstimate
 
     shortText' :: Maybe BlockText
-      | null bs = Nothing
-      | otherwise = Just $ normalText (batteryIcon <> " ") <> overallPercentage
+    shortText' = Just $ normalText (batteryIcon <> " ") <> overallPercentage
 
     batteryIcon :: T.Text
     batteryIcon

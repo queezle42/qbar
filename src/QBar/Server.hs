@@ -29,23 +29,23 @@ import System.Posix.Signals
 import Control.Lens hiding (each, (.=))
 
 data Handle = Handle {
-  handleActionList :: IORef [(T.Text, Click -> BarIO ())],
+  handleActionList :: IORef [(T.Text, BlockEventHandler)],
   handleActiveFilter :: IORef Filter
 }
 
 renderIndicator :: CachedBlock
 -- Using 'cachedBlock' is a hack to actually get the block to update on every bar update (by doing this it will not get a cache later in the pipeline).
-renderIndicator = forever $ each $ map (Just . createBlock . normalText) ["/", "-", "\\", "|"]
+renderIndicator = forever $ each $ map (mkBlockState . createBlock . normalText) ["/", "-", "\\", "|"]
 
-runBlock :: CachedBlock -> BarIO (Maybe (Maybe BlockOutput, CachedBlock))
+runBlock :: CachedBlock -> BarIO (Maybe (BlockState, CachedBlock))
 runBlock producer = do
   next' <- next producer
   return $ case next' of
     Left _ -> Nothing
-    Right (block, newProducer) -> Just (block, newProducer)
+    Right (blockState, newProducer) -> Just (blockState, newProducer)
 
-runBlocks :: [CachedBlock] -> BarIO ([Maybe BlockOutput], [CachedBlock])
-runBlocks block = unzip . catMaybes <$> mapM runBlock block
+runBlocks :: [CachedBlock] -> BarIO ([BlockState], [CachedBlock])
+runBlocks blocks = unzip . catMaybes <$> mapM runBlock blocks
 
 data RenderBlock = RenderBlock T.Text (Maybe T.Text) (Maybe T.Text)
   deriving(Show)
@@ -82,20 +82,20 @@ renderLoop options handle@Handle{handleActiveFilter} barUpdateEvent previousBarO
 
       blocks' <- addNewBlocks blocks
 
-      (blockOutputs, blocks'') <- runBlocks blocks'
+      (blockStates, blocks'') <- runBlocks blocks'
 
-      currentBarOutput <- liftIO $ renderLine options handle blockFilter blockOutputs previousBarOutput'
+      currentBarOutput <- liftIO $ renderLine options handle blockFilter blockStates previousBarOutput'
 
       -- Wait for 100ms after rendering a line to limit cpu load of rapid events
       liftIO $ threadDelay 100000
 
       renderLoop' currentBarOutput blocks''
 
-renderLine :: MainOptions -> Handle -> Filter -> [Maybe BlockOutput] -> BS.ByteString -> IO BS.ByteString
-renderLine MainOptions{verbose} Handle{handleActionList} blockFilter blocks' previousEncodedOutput = do
+renderLine :: MainOptions -> Handle -> Filter -> [BlockState] -> BS.ByteString -> IO BS.ByteString
+renderLine MainOptions{verbose} Handle{handleActionList} blockFilter blockStates previousEncodedOutput = do
   time <- fromRational . toRational <$> getPOSIXTime
-  let blocks = catMaybes blocks'
-  let filteredBlocks = applyFilter blockFilter time blocks
+  let blockOutputs = map fst $ catMaybes blockStates
+  let filteredBlocks = applyFilter blockFilter time blockOutputs
   -- let encodedOutput = encode $ map values filteredBlocks
   let encodedOutput = encodeOutput filteredBlocks
   let changed = previousEncodedOutput /= encodedOutput
@@ -111,8 +111,8 @@ renderLine MainOptions{verbose} Handle{handleActionList} blockFilter blocks' pre
 
   when verbose $ unless changed $ hPutStrLn stderr "Output unchanged"
 
-  -- Register click handlers regardless of bar changes, because we cannot easily check if any handler has changed
-  writeIORef handleActionList clickActionList
+  -- Register all event handlers regardless of bar changes, because we cannot easily check if any handler has changed
+  writeIORef handleActionList eventHandlerList
 
   return encodedOutput
   where
@@ -122,21 +122,22 @@ renderLine MainOptions{verbose} Handle{handleActionList} blockFilter blocks' pre
     encodeOutput bs = encode $ zipWith encodeBlock bs $ theme bs
     encodeBlock :: BlockOutput -> (T.Text, Maybe T.Text) -> RenderBlock
     encodeBlock b (fullText', shortText') = RenderBlock fullText' shortText' (b^.blockName)
-    clickActionList :: [(T.Text, Click -> BarIO ())]
-    clickActionList = mapMaybe getClickAction . catMaybes $ blocks'
-    getClickAction :: BlockOutput -> Maybe (T.Text, Click -> BarIO ())
-    getClickAction block = do
-      blockName' <- block^.blockName
-      clickAction' <- block^.clickAction
-      return (blockName', clickAction')
+    eventHandlerList :: [(T.Text, BlockEventHandler)]
+    eventHandlerList = mapMaybe getEventHandler $ blockStates
+    getEventHandler :: BlockState -> Maybe (T.Text, BlockEventHandler)
+    getEventHandler Nothing = Nothing
+    getEventHandler (Just (_, Nothing)) = Nothing
+    getEventHandler (Just (blockOutput, Just eventHandler)) = do
+      blockName' <- blockOutput^.blockName
+      return (blockName', eventHandler)
 
 createBarUpdateChannel :: IO (IO (), BarUpdateEvent)
 createBarUpdateChannel = do
   event <- Event.newSet
   return (Event.set event, event)
 
-handleStdin :: MainOptions -> IORef [(T.Text, Click -> BarIO ())] -> BarIO ()
-handleStdin options actionListIORef = do
+handleStdin :: MainOptions -> IORef [(T.Text, BlockEventHandler)] -> BarIO ()
+handleStdin options eventHandlerListIORef = do
   bar <- askBar
   liftIO $ forever $ do
     line <- BSSC8.hGetLine stdin
@@ -147,19 +148,19 @@ handleStdin options actionListIORef = do
         BSSC8.hPutStrLn stderr line
         hFlush stderr
 
-      let maybeClick = decode $ removeComma $ BS.fromStrict line
-      case maybeClick of
-        Just click -> do
-          clickActionList <- readIORef actionListIORef
-          let maybeClickAction = getClickAction clickActionList click
-          case maybeClickAction of
-            Just clickAction' -> async (runBarIO bar (clickAction' click)) >>= link
+      let maybeBlockEvent = decode $ removeComma $ BS.fromStrict line
+      case maybeBlockEvent of
+        Just blockEvent -> do
+          eventHandlerList <- readIORef eventHandlerListIORef
+          let maybeEventHandler = getEventHandler eventHandlerList blockEvent
+          case maybeEventHandler of
+            Just eventHandler -> async (runBarIO bar (eventHandler blockEvent)) >>= link
             Nothing -> return ()
         Nothing -> return ()
 
   where
-    getClickAction :: [(T.Text, Click -> BarIO ())] -> Click -> Maybe (Click -> BarIO ())
-    getClickAction clickActionList click = lookup (name click) clickActionList
+    getEventHandler :: [(T.Text, BlockEventHandler)] -> BlockEvent -> Maybe BlockEventHandler
+    getEventHandler eventHandlerList blockEvent = lookup (name blockEvent) eventHandlerList
     removeComma :: C8.ByteString -> C8.ByteString
     removeComma line
       | C8.head line == ',' = C8.tail line
@@ -179,18 +180,15 @@ installSignalHandlers = do
 renderInitialBlocks :: MainOptions -> Handle -> Filter -> IO C8.ByteString
 renderInitialBlocks options handle blockFilter = do
   date <- dateBlockOutput
-  let initialBlocks = [Just date]
+  let initialBlocks = [mkBlockState date]
   -- Attach spinner indicator when verbose flag is set
-  let initialBlocks' = if indicator options then initialBlocks <> [Just . createBlock . normalText $ "*"] else initialBlocks
+  let initialBlocks' = if indicator options then initialBlocks <> [mkBlockState $ createBlock . normalText $ "*"] else initialBlocks
   -- Render initial time block so the bar is not empty after startup
   renderLine options handle blockFilter initialBlocks' ""
 
 
-runBarConfiguration :: BarIO () -> MainOptions -> IO ()
-runBarConfiguration defaultBarConfig options = do
-  -- Create IORef to contain the active filter
-  let initialBlockFilter = StaticFilter None
-  activeFilter <- newIORef initialBlockFilter
+runBarServer :: BarIO () -> MainOptions -> IO ()
+runBarServer defaultBarConfig options = do
 
   putStrLn "{\"version\":1,\"click_events\":true}"
   putStrLn "["
@@ -202,10 +200,15 @@ runBarConfiguration defaultBarConfig options = do
 
   let bar = Bar { requestBarUpdate, newBlockChan }
 
-  -- Create IORef for mouse click callbacks
-  actionList <- newIORef []
+  -- Create IORef to contain the active filter
+  let initialBlockFilter = StaticFilter None
+  activeFilter <- newIORef initialBlockFilter
+
+  -- Create IORef for event handlers
+  eventHandlerListIORef <- newIORef []
+
   let handle = Handle {
-    handleActionList = actionList,
+    handleActionList = eventHandlerListIORef,
     handleActiveFilter = activeFilter
   }
 
@@ -213,7 +216,7 @@ runBarConfiguration defaultBarConfig options = do
 
 
   -- Fork stdin handler
-  void $ forkFinally (runBarIO bar (handleStdin options actionList)) (\result -> hPutStrLn stderr $ "handleStdin failed: " <> show result)
+  void $ forkFinally (runBarIO bar (handleStdin options eventHandlerListIORef)) (\result -> hPutStrLn stderr $ "handleStdin failed: " <> show result)
 
 
   runBarIO bar loadBlocks
@@ -251,6 +254,6 @@ createCommandChan = newTChanIO
 runQBar :: BarIO () -> MainOptions -> IO ()
 runQBar barConfiguration options@MainOptions{barCommand} = runCommand barCommand
   where
-    runCommand BarServer = runBarConfiguration barConfiguration options
+    runCommand BarServer = runBarServer barConfiguration options
     runCommand NoFilter = sendIpc options $ SetFilter $ StaticFilter None
     runCommand RainbowFilter = sendIpc options $ SetFilter $ AnimatedFilter Rainbow

@@ -13,7 +13,7 @@ import Control.Lens
 
 dateBlock :: PushBlock
 dateBlock = do
-  yield . Just =<< liftIO dateBlockOutput
+  updateBlock =<< liftIO dateBlockOutput
   liftIO $ sleepUntil =<< nextMinute
   dateBlock
 
