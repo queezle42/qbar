@@ -7,6 +7,7 @@ import QBar.Cli (MainOptions(..))
 import QBar.Core
 -- TODO: remove dependency?
 import QBar.Filter
+import QBar.BlockOutput
 import QBar.BlockText
 
 import Control.Exception (handle)
@@ -17,6 +18,8 @@ import Control.Concurrent.Async
 import Control.Concurrent.STM.TChan (TChan, writeTChan)
 import Data.Aeson.TH
 import Data.ByteString (ByteString)
+import System.FilePath ((</>))
+import System.IO
 import Data.Either (either)
 import Data.Maybe (maybe)
 import Data.Text.Lazy (Text, pack)
@@ -30,9 +33,6 @@ import Pipes.Aeson.Unchecked (encode)
 import Pipes.Network.TCP (fromSocket, toSocket)
 import System.Directory (removeFile, doesFileExist)
 import System.Environment (getEnv)
-import System.FilePath ((</>))
-import System.IO
-
 type CommandChan = TChan Command
 
 data Command = SetFilter Filter
@@ -128,5 +128,5 @@ handleBlockStream producer = do
   where
     handleParsedBlock :: Producer ByteString IO () -> String -> PushBlock
     handleParsedBlock leftovers update = do
-      updateBlock $ createBlock . normalText $ TL.pack update
+      updateBlock $ mkBlockOutput . normalText $ TL.pack update
       handleBlockStream leftovers

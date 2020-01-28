@@ -1,6 +1,7 @@
 module QBar.DefaultConfig where
 
 import QBar.Blocks
+import QBar.BlockOutput
 import QBar.Core
 
 import Pipes

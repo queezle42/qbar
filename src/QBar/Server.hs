@@ -1,6 +1,7 @@
 module QBar.Server where
 
 import QBar.Blocks
+import QBar.BlockOutput
 import QBar.BlockText
 import QBar.Core
 import QBar.Cli
@@ -36,7 +37,7 @@ data Handle = Handle {
 
 renderIndicator :: CachedBlock
 -- Using 'cachedBlock' is a hack to actually get the block to update on every bar update (by doing this it will not get a cache later in the pipeline).
-renderIndicator = forever $ each $ map (mkBlockState . createBlock . normalText) ["/", "-", "\\", "|"]
+renderIndicator = forever $ each $ map (mkBlockState . mkBlockOutput . normalText) ["/", "-", "\\", "|"]
 
 runBlock :: CachedBlock -> BarIO (Maybe (BlockState, CachedBlock))
 runBlock producer = do
@@ -183,7 +184,7 @@ renderInitialBlocks options handle blockFilter = do
   date <- dateBlockOutput
   let initialBlocks = [mkBlockState date]
   -- Attach spinner indicator when verbose flag is set
-  let initialBlocks' = if indicator options then initialBlocks <> [mkBlockState $ createBlock . normalText $ "*"] else initialBlocks
+  let initialBlocks' = if indicator options then initialBlocks <> [mkBlockState $ mkBlockOutput . normalText $ "*"] else initialBlocks
   -- Render initial time block so the bar is not empty after startup
   renderLine options handle blockFilter initialBlocks' ""
 

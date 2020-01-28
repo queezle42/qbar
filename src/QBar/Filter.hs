@@ -2,7 +2,7 @@
 
 module QBar.Filter where
 
-import QBar.Core
+import QBar.BlockOutput
 import QBar.BlockText
 
 import Control.Monad.State.Lazy (State, evalState, get, put)

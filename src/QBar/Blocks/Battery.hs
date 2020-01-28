@@ -5,6 +5,7 @@ module QBar.Blocks.Battery where
 
 
 import QBar.Core hiding (name)
+import QBar.BlockOutput
 import QBar.BlockText
 import Pipes
 
@@ -86,7 +87,7 @@ batteryBlock = do
 
 updateBatteryBlock :: Bool -> [BatteryState] -> Block ()
 updateBatteryBlock _ [] = yield Nothing
-updateBatteryBlock isPlugged bs = updateBlock $ (shortText.~shortText') $ createBlock fullText'
+updateBatteryBlock isPlugged bs = updateBlock $ (shortText.~shortText') $ mkBlockOutput fullText'
   where
     fullText' :: BlockText
     fullText' = normalText (batteryIcon <> " ") <> overallPercentage <> optionalEachBattery <> optionalOverallEstimate

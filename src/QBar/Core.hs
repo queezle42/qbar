@@ -3,16 +3,18 @@
 
 module QBar.Core where
 
+import QBar.BlockOutput
 import QBar.BlockText
 
-import Control.Exception (IOException)
-import Control.Monad (forever)
-import Control.Monad.Reader (ReaderT, runReaderT, ask)
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.Async
 import Control.Concurrent.Event as Event
 import Control.Concurrent.MVar
 import Control.Concurrent.STM.TChan (TChan, writeTChan)
+import Control.Exception (IOException)
+import Control.Lens
+import Control.Monad (forever)
+import Control.Monad.Reader (ReaderT, runReaderT, ask)
 import Data.Aeson.TH
 import qualified Data.ByteString.Lazy.Char8 as C8
 import Data.Int (Int64)
@@ -28,7 +30,6 @@ import System.Exit
 import System.IO
 import System.Process.Typed (Process, shell, setStdin, setStdout,
   getStdout, closed, createPipe, readProcessStdout, startProcess, stopProcess)
-import Control.Lens
 
 
 data BlockEvent = Click {
@@ -36,14 +37,6 @@ data BlockEvent = Click {
   button :: Int
 } deriving Show
 $(deriveJSON defaultOptions ''BlockEvent)
-
-data BlockOutput = BlockOutput
-  { _fullText :: BlockText
-  , _shortText :: Maybe BlockText
-  , _blockName :: Maybe T.Text
-  , _invalid :: Bool
-  }
-$(deriveJSON defaultOptions ''BlockOutput)
 
 
 data PushMode = PushMode
@@ -84,7 +77,6 @@ data Bar = Bar {
   requestBarUpdate :: IO (),
   newBlockChan :: TChan CachedBlock
 }
-makeLenses ''BlockOutput
 
 instance IsBlock PushBlock where
   toCachedBlock = cachePushBlock
@@ -113,23 +105,6 @@ runBarIO bar action = runReaderT (runSafeT action) bar
 
 askBar :: BarIO Bar
 askBar = lift ask
-
-createBlock :: BlockText -> BlockOutput
-createBlock text = BlockOutput
-  { _fullText = text
-  , _shortText = Nothing
-  , _blockName = Nothing
-  , _invalid = False
-  }
-
-createErrorBlock :: T.Text -> BlockOutput
-createErrorBlock = createBlock . importantText criticalImportant
-
-emptyBlock :: BlockOutput
-emptyBlock = createBlock mempty
-
-addIcon :: T.Text -> BlockOutput -> BlockOutput
-addIcon icon = over fullText $ (<>) . normalText $ icon <> " "
 
 modify :: (BlockOutput -> BlockOutput)
        -> Pipe BlockState BlockState BarIO r
@@ -252,9 +227,9 @@ blockScript path = forever $ updateBlock =<< (lift blockScriptAction)
           (text:short:_) -> shortText ?~ pangoText short $ createScriptBlock text
           (text:_) -> createScriptBlock text
           [] -> createScriptBlock "-"
-        (ExitFailure nr) -> return $ createErrorBlock $ "[" <> T.pack (show nr) <> "]"
+        (ExitFailure nr) -> return $ mkErrorOutput $ "[" <> T.pack (show nr) <> "]"
     createScriptBlock :: T.Text -> BlockOutput
-    createScriptBlock text = blockName ?~ T.pack path $ createBlock . pangoText $ text
+    createScriptBlock text = blockName ?~ T.pack path $ mkBlockOutput . pangoText $ text
 
 startPersistentBlockScript :: FilePath -> PushBlock
 -- The outer catchP only catches errors that occur during process creation
@@ -262,7 +237,7 @@ startPersistentBlockScript path = catchP startScriptProcess handleError
   where
     handleError :: IOException -> PushBlock
     handleError e = do
-      updateBlock . createErrorBlock $ "[" <> T.pack (show e) <> "]"
+      updateBlock . mkErrorOutput $ "[" <> T.pack (show e) <> "]"
       exitBlock
     handleErrorWithProcess :: (Process i o e) -> IOException -> PushBlock
     handleErrorWithProcess process e = do
@@ -278,7 +253,7 @@ startPersistentBlockScript path = catchP startScriptProcess handleError
     blockFromHandle :: Handle -> PushBlock
     blockFromHandle handle = forever $ do
       line <- liftIO $ TIO.hGetLine handle
-      updateBlock $ createBlock . pangoText $ line
+      updateBlock $ mkBlockOutput . pangoText $ line
       lift updateBar
 
 addBlock :: IsBlock a => a -> BarIO ()
