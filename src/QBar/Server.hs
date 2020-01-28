@@ -1,11 +1,12 @@
 module QBar.Server where
 
 import QBar.Blocks
+import QBar.BlockText
 import QBar.Core
 import QBar.Cli
 import QBar.ControlSocket
 import QBar.Filter
-import QBar.BlockText
+import QBar.Host
 import QBar.Themes
 
 import Control.Monad (forever, when, unless)
@@ -189,62 +190,59 @@ renderInitialBlocks options handle blockFilter = do
 
 runBarServer :: BarIO () -> MainOptions -> IO ()
 runBarServer defaultBarConfig options = do
-
   putStrLn "{\"version\":1,\"click_events\":true}"
   putStrLn "["
 
-  (requestBarUpdate, barUpdateEvent) <- createBarUpdateChannel
-
-  -- Create channel to send new block producers to render loop
-  newBlockChan <- newTChanIO
-
-  let bar = Bar { requestBarUpdate, newBlockChan }
-
-  -- Create IORef to contain the active filter
-  let initialBlockFilter = StaticFilter None
-  activeFilter <- newIORef initialBlockFilter
-
-  -- Create IORef for event handlers
-  eventHandlerListIORef <- newIORef []
-
-  let handle = Handle {
-    handleActionList = eventHandlerListIORef,
-    handleActiveFilter = activeFilter
-  }
-
-  initialOutput <- renderInitialBlocks options handle initialBlockFilter
+  runBarHost (\newBlockChan barUpdateEvent -> do
 
 
-  -- Fork stdin handler
-  void $ forkFinally (runBarIO bar (handleStdin options eventHandlerListIORef)) (\result -> hPutStrLn stderr $ "handleStdin failed: " <> show result)
+    -- Create IORef to contain the active filter
+    let initialBlockFilter = StaticFilter None
+    activeFilter <- liftIO $ newIORef initialBlockFilter
+
+    -- Create IORef for event handlers
+    eventHandlerListIORef <- liftIO $ newIORef []
+
+    let handle = Handle {
+      handleActionList = eventHandlerListIORef,
+      handleActiveFilter = activeFilter
+    }
+
+    initialOutput <- liftIO $ renderInitialBlocks options handle initialBlockFilter
+
+    bar <- askBar
+    -- Fork stdin handler
+    liftIO $ void $ forkFinally (runBarIO bar (handleStdin options eventHandlerListIORef)) (\result -> hPutStrLn stderr $ "handleStdin failed: " <> show result)
 
 
-  runBarIO bar loadBlocks
+    loadBlocks
 
-  -- Install signal handler for SIGCONT
-  runBarIO bar installSignalHandlers
+    -- Install signal handler for SIGCONT
+    installSignalHandlers
 
-  -- Create control socket
-  commandChan <- createCommandChan
-  controlSocketAsync <- listenUnixSocketAsync options commandChan
-  link controlSocketAsync
+    -- Create control socket
+    commandChan <- liftIO createCommandChan
+    controlSocketAsync <- liftIO $ listenUnixSocketAsync options commandChan
+    liftIO $ link controlSocketAsync
 
-  -- Update bar on control socket messages
-  socketUpdateAsync <- async $ forever $ do
-    command <- atomically $ readTChan commandChan
-    case command of
-      SetFilter blockFilter -> atomicWriteIORef activeFilter blockFilter
-      Block -> error "TODO"
-    updateBar' bar
-  link socketUpdateAsync
+    -- Update bar on control socket messages
+    socketUpdateAsync <- liftIO $ async $ forever $ do
+      command <- atomically $ readTChan commandChan
+      case command of
+        SetFilter blockFilter -> atomicWriteIORef activeFilter blockFilter
+        Block -> error "TODO"
+      updateBar' bar
+    liftIO $ link socketUpdateAsync
 
-  runBarIO bar (renderLoop options handle barUpdateEvent initialOutput newBlockChan)
-  where
-    loadBlocks :: BarIO ()
-    loadBlocks = do
-      when (indicator options) $ addBlock renderIndicator
+    renderLoop options handle barUpdateEvent initialOutput newBlockChan
+    )
+      where
+        loadBlocks :: BarIO ()
+        loadBlocks = do
+          when (indicator options) $ addBlock renderIndicator
 
-      defaultBarConfig
+          defaultBarConfig
+
 
 
 createCommandChan :: IO CommandChan
