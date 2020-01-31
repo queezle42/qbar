@@ -87,6 +87,15 @@ data Bar = Bar {
 data BarUpdateChannel = BarUpdateChannel (IO ())
 type BarUpdateEvent = Event.Event
 
+
+class MonadBarIO m where
+  askBar :: m Bar
+instance MonadBarIO BarIO where
+  askBar = lift ask
+instance MonadBarIO (Proxy a' a b' b BarIO) where
+  askBar = lift askBar
+
+
 mkBlockState :: BlockOutput -> BlockState
 mkBlockState blockOutput = Just (blockOutput, Nothing)
 
@@ -103,9 +112,6 @@ updateEventHandler eventHandler (Just (blockOutput, _)) = Just (blockOutput, Jus
 
 runBarIO :: Bar -> BarIO r -> IO r
 runBarIO bar action = runReaderT (runSafeT action) bar
-
-askBar :: BarIO Bar
-askBar = lift ask
 
 modify :: (BlockOutput -> BlockOutput)
        -> Pipe BlockState BlockState BarIO r
@@ -152,7 +158,7 @@ sharedInterval seconds = do
       -- Updates all client blocks
       -- If send returns 'False' the clients mailbox has been closed, so it is removed
       bar <- askBar
-      liftIO $ modifyMVar_ clientsMVar $ fmap catMaybes . mapConcurrently (\r -> runBarIO bar $ runAndFilterClient r)
+      liftIO $ modifyMVar_ clientsMVar $ fmap catMaybes . mapConcurrently (runBarIO bar . runAndFilterClient)
       -- Then update the bar
       updateBar
 
