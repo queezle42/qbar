@@ -14,6 +14,7 @@ data BlockOutput = BlockOutput
   , _blockName :: Maybe T.Text
   , _invalid :: Bool
   }
+  deriving (Eq, Show)
 $(deriveJSON defaultOptions ''BlockOutput)
 makeLenses ''BlockOutput
 

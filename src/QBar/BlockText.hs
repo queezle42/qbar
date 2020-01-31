@@ -9,7 +9,7 @@ import Data.Int (Int64)
 import QBar.Pango
 
 newtype BlockText = BlockText [BlockTextSegment]
-  deriving (Show)
+  deriving (Eq, Show)
 instance Semigroup BlockText where
   (BlockText a) <> (BlockText b) = BlockText (a <> b)
 instance Monoid BlockText where
@@ -26,7 +26,7 @@ data BlockTextSegment = BlockTextSegment {
     text :: T.Text
   }
   | PangoTextSegment T.Text
-  deriving (Show)
+  deriving (Eq, Show)
 
 type Importance = Float
 
