@@ -6,7 +6,7 @@ qbar is a status command for [sway](https://swaywm.org/) and [i3](https://i3wm.o
 
 ### Compiling from Source
 
-Building qbar requires [stack](https://haskellstack.org/). To build run:
+Building qbar requires [stack](https://haskellstack.org/). To build it run:
 ```
 stack build
 ```
