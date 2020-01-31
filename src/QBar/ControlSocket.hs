@@ -33,6 +33,7 @@ import Pipes.Aeson.Unchecked (encode)
 import Pipes.Network.TCP (fromSocket, toSocket)
 import System.Directory (removeFile, doesFileExist)
 import System.Environment (getEnv)
+
 type CommandChan = TChan Command
 
 data Command = SetFilter Filter
