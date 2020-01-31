@@ -58,8 +58,13 @@ type PullBlock = Block PullMode
 -- |Cached block. Always 'yield's the latest update, so it should only be pulled when the bar is rendered.
 type CachedBlock = Block CachedMode
 
-class IsBlock a where
+class IsCachableBlock a where
   toCachedBlock :: a -> CachedBlock
+
+instance IsCachableBlock PushBlock where
+  toCachedBlock = cachePushBlock
+instance IsCachableBlock CachedBlock where
+  toCachedBlock = id
 
 class IsBlockMode a where
   exitBlock :: Block a
@@ -78,10 +83,6 @@ data Bar = Bar {
   newBlockChan :: TChan CachedBlock
 }
 
-instance IsBlock PushBlock where
-  toCachedBlock = cachePushBlock
-instance IsBlock CachedBlock where
-  toCachedBlock = id
 
 data BarUpdateChannel = BarUpdateChannel (IO ())
 type BarUpdateEvent = Event.Event
@@ -256,7 +257,7 @@ startPersistentBlockScript path = catchP startScriptProcess handleError
       updateBlock $ mkBlockOutput . pangoText $ line
       lift updateBar
 
-addBlock :: IsBlock a => a -> BarIO ()
+addBlock :: IsCachableBlock a => a -> BarIO ()
 addBlock block = do
   newBlockChan' <- newBlockChan <$> askBar
   liftIO $ atomically $ writeTChan newBlockChan' $ toCachedBlock block
