@@ -24,9 +24,9 @@ mkTheme theming' = map themeBlock
           | block^.invalid = invalidSimplifiedTheme
           | otherwise = theming'
         fullText' :: T.Text
-        fullText' = themeBlockText theming $ block^.fullText
+        fullText' = themeBlockText theming $ block ^. fullText
         shortText' :: Maybe T.Text
-        shortText' = themeBlockText theming <$> block^.shortText
+        shortText' = themeBlockText theming <$> block ^. shortText
     themeBlockText :: SimplifiedTheme -> BlockText -> T.Text
     themeBlockText theming (BlockText b) = foldr ((<>) . themeSegment theming) "" b
     themeSegment :: SimplifiedTheme -> BlockTextSegment -> T.Text
@@ -38,7 +38,7 @@ mkTheme theming' = map themeBlock
 
 
 invalidColor :: Color
-invalidColor = ColorRGBA (0x96/255) (0x98/255) (0x96/255) (0x77/255)
+invalidColor = ColorRGBA (0x96 / 255) (0x98 / 255) (0x96 / 255) (0x77 / 255)
 
 
 invalidSimplifiedTheme :: SimplifiedTheme
@@ -61,4 +61,4 @@ defaultTheme = mkTheme defaultTheme'
       | isWarning importance,active   = (ColorRGB 1 0.9 0, Nothing)
       | isWarning importance          = (ColorRGB 0.6 0.6 0, Nothing)
       | otherwise, active             = (ColorRGB 1 1 1, Nothing)
-      | otherwise                     = (ColorRGB (0x96/255) (0x98/255) (0x96/255), Nothing)
+      | otherwise                     = (ColorRGB (0x96 / 255) (0x98 / 255) (0x96 / 255), Nothing)
