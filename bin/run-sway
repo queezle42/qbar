@@ -3,7 +3,7 @@
 set -e
 set -u
 
-readonly default_bar_command="qbar server"
+readonly default_bar_command="$(swaymsg -t get_bar_config bar-0 | jq --raw-output .status_command)"
 readonly executable_name=qbar
 readonly sway_bar_id=bar-0
 
