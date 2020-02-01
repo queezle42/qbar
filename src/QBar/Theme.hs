@@ -71,7 +71,7 @@ rainbowTheme time blocks = reverse $ evalState (mapM rainbowBlock $ reverse bloc
   where
     rainbowBlock :: BlockOutput -> State Integer BlockOutput
     rainbowBlock block = do
-      let text = removePango $ block ^. fullText
+      let text = rawText $ block ^. fullText
       let chars = T.unpack . T.reverse $ text
       coloredChars <- mapM rainbowChar chars
       let rainbowText = T.concat . reverse $ coloredChars

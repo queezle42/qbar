@@ -133,23 +133,30 @@ toImportance' (tMax, tCritical, tError, tWarning, tNormal, tMinimal) val
     valueOtherwise tNormal' Nothing v = 1 - logarithmicMatch v tNormal'
 
 
+invalidateBlock :: BlockOutput -> BlockOutput
+invalidateBlock block@BlockOutput{ _fullText, _shortText } = block {
+  _fullText = normalText . rawText $ _fullText,
+  _shortText = normalText . rawText <$> _shortText,
+  _invalid = True
+}
 
-removePango :: BlockText -> T.Text
-removePango (BlockText b) = foldr ((<>) . removePangoFromSegment) "" b
+
+rawText :: BlockText -> T.Text
+rawText (BlockText b) = foldMap rawTextFromSegment b
   where
-    removePangoFromSegment :: BlockTextSegment -> T.Text
-    removePangoFromSegment BlockTextSegment { active=_active, importance=_importance, text } = text
-    removePangoFromSegment (PangoTextSegment text) =
+    rawTextFromSegment :: BlockTextSegment -> T.Text
+    rawTextFromSegment BlockTextSegment{text} = text
+    rawTextFromSegment (PangoTextSegment text) =
       case parsePango text of
         Left _ -> text
         Right parsed -> removeFormatting parsed
 
 printedLength :: BlockText -> Int64
-printedLength (BlockText b) = foldr ((+) . printedLength') 0 b
+printedLength (BlockText b) = sum . map segmentLength $ b
   where
-    printedLength' :: BlockTextSegment -> Int64
-    printedLength' BlockTextSegment { text, active=_, importance=_ } = T.length text
-    printedLength' (PangoTextSegment _) = 0
+    segmentLength :: BlockTextSegment -> Int64
+    segmentLength BlockTextSegment { text } = T.length text
+    segmentLength (PangoTextSegment pango) = either (const $ T.length pango) (T.length . removeFormatting) $ parsePango pango
 
 mkText :: Bool -> Importance -> T.Text -> BlockText
 mkText active importance text = BlockText [BlockTextSegment { text = pangoFriendly text, active, importance }]

@@ -187,7 +187,7 @@ sharedInterval seconds = do
         updateClickHandler Nothing _ = return ()
         updateClickHandler (Just (block, _)) _ = do
           -- Give user feedback that the block is updating
-          let outdatedBlock = block & invalid.~True
+          let outdatedBlock = invalidateBlock block
           -- The invalidated block output has no event handler
           liftIO $ void $ atomically $ send output . Just $ (outdatedBlock, Nothing)
           -- Notify bar about changed block state to display the feedback
