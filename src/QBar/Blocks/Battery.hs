@@ -6,7 +6,6 @@ module QBar.Blocks.Battery where
 
 import QBar.Core hiding (name)
 import QBar.BlockOutput
-import QBar.BlockText
 import Pipes
 
 import qualified Data.Text.Lazy as T

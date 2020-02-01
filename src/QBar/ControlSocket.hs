@@ -8,7 +8,6 @@ import QBar.Core
 -- TODO: remove dependency?
 import QBar.Filter
 import QBar.BlockOutput
-import QBar.BlockText
 
 import Control.Exception (handle)
 import Control.Monad (forever, void, when)

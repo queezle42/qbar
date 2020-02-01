@@ -1,7 +1,6 @@
 module QBar.Themes where
 
 import QBar.BlockOutput
-import QBar.BlockText
 
 import qualified Data.Text.Lazy as T
 

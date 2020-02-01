@@ -3,7 +3,6 @@
 module QBar.Filter where
 
 import QBar.BlockOutput
-import QBar.BlockText
 
 import Control.Monad.State.Lazy (State, evalState, get, put)
 import Data.Aeson.TH

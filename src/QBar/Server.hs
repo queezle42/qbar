@@ -3,7 +3,6 @@
 module QBar.Server where
 
 import QBar.BlockOutput
-import QBar.BlockText
 import QBar.Core
 import QBar.Cli
 import QBar.ControlSocket

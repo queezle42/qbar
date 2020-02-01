@@ -1,7 +1,6 @@
 module QBar.Blocks.Date where
 
 import QBar.BlockOutput
-import QBar.BlockText
 import QBar.Core
 import QBar.Time
 

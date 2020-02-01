@@ -4,7 +4,6 @@
 module QBar.Core where
 
 import QBar.BlockOutput
-import QBar.BlockText
 
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.Async
