@@ -10,7 +10,7 @@ import QBar.Host
 import QBar.Theme
 
 import Control.Monad (forever, when, unless, forM_)
-import Control.Concurrent.Async
+-- import Control.Concurrent.Async
 import Control.Concurrent.STM.TChan (newTChanIO)
 import Data.Aeson (encode, decode, ToJSON, toJSON, object, (.=))
 import Data.ByteString.Lazy (hPut)
@@ -108,18 +108,18 @@ runBarServer defaultBarConfig options = runBarHost barServer (swayBarInput optio
         defaultBarConfig
 
       -- Create control socket
-      commandChan <- liftIO createCommandChan
-      controlSocketAsync <- liftIO $ listenUnixSocketAsync options commandChan
-      liftIO $ link controlSocketAsync
+      -- commandChan <- liftIO createCommandChan
+      -- controlSocketAsync <- liftIO $ listenUnixSocketAsync options commandChan
+      -- liftIO $ link controlSocketAsync
 
-      bar <- askBar
+      -- bar <- askBar
 
       -- Update bar on control socket messages
-      socketUpdateAsync <- liftIO $ async $ forever $ do
-        -- command <- atomically $ readTChan commandChan
-        void $ error "TODO"
-        updateBar' bar
-      liftIO $ link socketUpdateAsync
+      -- socketUpdateAsync <- liftIO $ async $ forever $ do
+      --   -- command <- atomically $ readTChan commandChan
+      --   void $ error "TODO"
+      --   updateBar' bar
+      -- liftIO $ link socketUpdateAsync
 
       swayBarOutput options
 
