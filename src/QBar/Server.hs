@@ -7,7 +7,7 @@ import QBar.Core
 import QBar.Cli
 import QBar.ControlSocket
 import QBar.Host
-import QBar.Themes
+import QBar.Theme
 
 import Control.Monad (forever, when, unless, forM_)
 import Control.Concurrent.Async

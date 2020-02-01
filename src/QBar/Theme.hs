@@ -1,4 +1,4 @@
-module QBar.Themes where
+module QBar.Theme where
 
 import QBar.BlockOutput
 
