@@ -69,7 +69,7 @@ swayBarOutput MainOptions{verbose} = do
     encodeOutput :: [BlockOutput] -> BS.ByteString
     encodeOutput bs = encode $ zipWith encodeBlock bs $ defaultTheme bs
     encodeBlock :: BlockOutput -> (T.Text, Maybe T.Text) -> RenderBlock
-    encodeBlock b (fullText', shortText') = RenderBlock fullText' shortText' (b^.blockName)
+    encodeBlock b (fullText', shortText') = RenderBlock fullText' shortText' (b ^. blockName)
 
 -- |A producer that reads swaybar/i3bar-input events from stdin and emits them as 'BlockEvent's.
 swayBarInput :: MainOptions -> Producer BlockEvent BarIO ()

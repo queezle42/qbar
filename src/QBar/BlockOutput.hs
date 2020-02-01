@@ -11,11 +11,11 @@ import Data.Int (Int64)
 import qualified Data.Text.Lazy as T
 
 
-data BlockOutput = BlockOutput
-  { _fullText :: BlockText
-  , _shortText :: Maybe BlockText
-  , _blockName :: Maybe T.Text
-  , _invalid :: Bool
+data BlockOutput = BlockOutput {
+    _fullText :: BlockText,
+    _shortText :: Maybe BlockText,
+    _blockName :: Maybe T.Text,
+    _invalid :: Bool
   }
   deriving (Eq, Show)
 
@@ -102,16 +102,16 @@ isNormal i
   | otherwise = True
 
 toImportance :: Real a => (a, a, a, a, a, a) -> a -> Importance
-toImportance (tMax, tCrit, tErr, tWarn, tNorm, tMin) =
-  toImportance' (Just tMax, tCrit, tErr, tWarn, tNorm, Just tMin)
+toImportance (tMax, tCritical, tError, tWarning, tNormal, tMinimal) =
+  toImportance' (Just tMax, tCritical, tError, tWarning, tNormal, Just tMinimal)
 
 toImportance' :: forall a. Real a => (Maybe a, a, a, a, a, Maybe a) -> a -> Importance
-toImportance' (tMax, tCrit, tErr, tWarn, tNorm, tMin) val
-  | tCrit <= val = 4 + valueCrit      tMax  tCrit val
-  | tErr  <= val = 3 + linearMatch    tCrit tErr  val
-  | tWarn <= val = 2 + linearMatch    tErr  tWarn val
-  | tNorm <= val = 1 + linearMatch    tWarn tNorm val
-  | otherwise    = 0 + valueOtherwise tNorm tMin  val
+toImportance' (tMax, tCritical, tError, tWarning, tNormal, tMinimal) val
+  | tCritical <= val = 4 + valueCritical tMax  tCritical val
+  | tError  <= val = 3 + linearMatch tCritical tError  val
+  | tWarning <= val = 2 + linearMatch tError  tWarning val
+  | tNormal <= val = 1 + linearMatch tWarning tNormal val
+  | otherwise = 0 + valueOtherwise tNormal tMinimal  val
   where
     e :: Importance
     e = exp 1
@@ -121,16 +121,17 @@ toImportance' (tMax, tCrit, tErr, tWarn, tNorm, tMin) val
     logarithmicMatch l u = 1 - 1 / log (e + realToFrac (u - l))
     frac :: a -> a -> Importance
     frac a b = realToFrac a / realToFrac b
-    valueCrit :: Maybe a -> a -> a -> Importance
-    valueCrit (Just tMax') tCrit' v
-      | tMax' > v = linearMatch tMax' tCrit' v
+    valueCritical :: Maybe a -> a -> a -> Importance
+    valueCritical (Just tMax') tCritical' v
+      | tMax' > v = linearMatch tMax' tCritical' v
       | otherwise = 1
-    valueCrit Nothing tCrit' v = logarithmicMatch tCrit' v
+    valueCritical Nothing tCritical' v = logarithmicMatch tCritical' v
     valueOtherwise :: a -> Maybe a -> a -> Importance
-    valueOtherwise tNorm' (Just tMin') v
-      | tMin' < v = linearMatch tNorm' tMin' v
+    valueOtherwise tNormal' (Just tMinimal') v
+      | tMinimal' < v = linearMatch tNormal' tMinimal' v
       | otherwise = 0
-    valueOtherwise tNorm' Nothing v = 1 - logarithmicMatch v tNorm'
+    valueOtherwise tNormal' Nothing v = 1 - logarithmicMatch v tNormal'
+
 
 
 removePango :: BlockText -> T.Text
@@ -168,7 +169,7 @@ activeText = mkText True normalImportant
 normalText :: T.Text -> BlockText
 normalText = mkText False normalImportant
 
-pangoText :: T.Text -> BlockText
+pangoText :: PangoText -> BlockText
 pangoText pango = BlockText [PangoTextSegment pango]
 
 surroundWith :: (T.Text -> BlockText) -> T.Text -> T.Text -> BlockText -> BlockText

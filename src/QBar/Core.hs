@@ -112,8 +112,7 @@ updateEventHandler eventHandler (Just (blockOutput, _)) = Just (blockOutput, Jus
 runBarIO :: Bar -> BarIO r -> IO r
 runBarIO bar action = runReaderT (runSafeT action) bar
 
-modify :: (BlockOutput -> BlockOutput)
-       -> Pipe BlockState BlockState BarIO r
+modify :: (BlockOutput -> BlockOutput) -> Pipe BlockState BlockState BarIO r
 modify x = PP.map (over (_Just . _1) x)
 
 autoPadding :: Pipe BlockState BlockState BarIO r
@@ -228,7 +227,7 @@ blockScript path = forever $ updateBlock =<< (lift blockScriptAction)
         ExitSuccess -> return $ case map E.decodeUtf8 (C8.lines output) of
           -- TODO: Fix this, but how?
           --   PangoSegments cannot have external formatting, so either allow that here,
-          --   or duplicate the function into ango and nonPango variants.
+          --   or duplicate the function into pango and nonPango variants.
           -- (text:short:color:_) -> setColor color $ shortText short $ createScriptBlock text
           (text:short:_) -> shortText ?~ pangoText short $ createScriptBlock text
           (text:_) -> createScriptBlock text

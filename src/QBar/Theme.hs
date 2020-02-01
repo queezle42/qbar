@@ -26,7 +26,7 @@ mkTheme theming' = map themeBlock
       where
         theming :: SimplifiedTheme
         theming
-          | block^.invalid = invalidSimplifiedTheme
+          | block ^. invalid = invalidSimplifiedTheme
           | otherwise = theming'
         fullText' :: PangoText
         fullText' = themeBlockText theming $ block ^. fullText
