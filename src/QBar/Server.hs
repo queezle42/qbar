@@ -27,16 +27,19 @@ renderIndicator :: CachedBlock
 -- Using 'cachedBlock' is a hack to actually get the block to update on every bar update (by doing this it will not get a cache later in the pipeline).
 renderIndicator = forever $ each $ map (mkBlockState . mkBlockOutput . normalText) ["/", "-", "\\", "|"]
 
-data RenderBlock = RenderBlock T.Text (Maybe T.Text) (Maybe T.Text)
-  deriving(Show)
+data RenderBlock = RenderBlock {
+  renderBlockFullText :: PangoText,
+  renderBlockShortText :: Maybe PangoText,
+  renderBlockName :: Maybe T.Text
+} deriving(Show)
 instance ToJSON RenderBlock where
-  toJSON (RenderBlock fullText' shortText' blockName') = object $
-    fullText'' <> shortText'' <> blockName'' <> pango''
+  toJSON RenderBlock{renderBlockFullText, renderBlockShortText, renderBlockName} = object $
+    fullText' <> shortText' <> blockName' <> pango'
     where
-      fullText'' = [ "full_text" .= fullText' ]
-      shortText'' = fromMaybe (\s -> ["short_text" .= s]) mempty shortText'
-      blockName'' = fromMaybe (\s -> ["name" .= s]) mempty blockName'
-      pango'' = [ "markup" .= ("pango" :: T.Text) ]
+      fullText' = [ "full_text" .= renderBlockFullText ]
+      shortText' = fromMaybe (\s -> ["short_text" .= s]) mempty renderBlockShortText
+      blockName' = fromMaybe (\s -> ["name" .= s]) mempty renderBlockName
+      pango' = [ "markup" .= ("pango" :: T.Text) ]
 
 
 -- |A consumer that accepts lists of 'BlockOutput' and renders them to stdout using the {sway,i3}bar-protocol.
