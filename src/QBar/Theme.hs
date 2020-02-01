@@ -10,11 +10,10 @@ import qualified Data.Text.Lazy as T
 import Numeric (showHex)
 
 
-
 data Color = ColorRGB (RGB Double) | ColorRGBA (RGB Double) Double
 
 
-type Theme = [BlockOutput] -> [(T.Text, Maybe T.Text)]
+type Theme = [BlockOutput] -> [(PangoText, Maybe PangoText)]
 type SimplifiedTheme = Bool -> Importance -> (Color, Maybe Color)
 type AnimatedTheme = Double -> Theme
 
@@ -22,20 +21,20 @@ type AnimatedTheme = Double -> Theme
 mkTheme :: SimplifiedTheme -> Theme
 mkTheme theming' = map themeBlock
   where
-    themeBlock :: BlockOutput -> (T.Text, Maybe T.Text)
+    themeBlock :: BlockOutput -> (PangoText, Maybe PangoText)
     themeBlock block = (fullText', shortText')
       where
         theming :: SimplifiedTheme
         theming
           | block^.invalid = invalidSimplifiedTheme
           | otherwise = theming'
-        fullText' :: T.Text
+        fullText' :: PangoText
         fullText' = themeBlockText theming $ block ^. fullText
-        shortText' :: Maybe T.Text
+        shortText' :: Maybe PangoText
         shortText' = themeBlockText theming <$> block ^. shortText
-    themeBlockText :: SimplifiedTheme -> BlockText -> T.Text
-    themeBlockText theming (BlockText b) = foldr ((<>) . themeSegment theming) "" b
-    themeSegment :: SimplifiedTheme -> BlockTextSegment -> T.Text
+    themeBlockText :: SimplifiedTheme -> BlockText -> PangoText
+    themeBlockText theming (BlockText b) = foldMap (themeSegment theming) b
+    themeSegment :: SimplifiedTheme -> BlockTextSegment -> PangoText
     themeSegment theming BlockTextSegment {active, importance, text} = (coloredText' $ theming active importance) text
     themeSegment _ (PangoTextSegment text) = text
 
