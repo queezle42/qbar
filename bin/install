@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env zsh
 
 set -e
 set -u
@@ -12,7 +12,7 @@ readonly executable_path=$local_bin/$executable_name
 stack install
 
 echo >&2
-if [ -n "${LOCAL_ZSH_COMPLETION_PATH+set}" -a -d "$LOCAL_ZSH_COMPLETION_PATH" ]
+if [[ -n "${LOCAL_ZSH_COMPLETION_PATH+set}" && -d "$LOCAL_ZSH_COMPLETION_PATH" ]]
 then
 	ZSH_COMPLETION_SCRIPT_PATH=$LOCAL_ZSH_COMPLETION_PATH/_$executable_name
 	$executable_path --zsh-completion-script $executable_path > $ZSH_COMPLETION_SCRIPT_PATH
