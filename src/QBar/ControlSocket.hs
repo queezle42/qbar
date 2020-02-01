@@ -5,8 +5,6 @@ module QBar.ControlSocket where
 
 import QBar.Cli (MainOptions(..))
 import QBar.Core
--- TODO: remove dependency?
-import QBar.Filter
 import QBar.BlockOutput
 
 import Control.Exception (handle)
@@ -35,7 +33,7 @@ import System.Environment (getEnv)
 
 type CommandChan = TChan Command
 
-data Command = SetFilter Filter
+data Command = SetTheme T.Text
   | Block
   deriving Show
 

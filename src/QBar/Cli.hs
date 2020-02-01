@@ -5,13 +5,13 @@ module QBar.Cli where
 import qualified Data.Text as T
 import Options.Applicative
 
-data BarCommand = BarServer | NoFilter | RainbowFilter
+data BarCommand = BarServer | DefaultTheme | RainbowTheme
 
 barCommandParser :: Parser BarCommand
 barCommandParser = hsubparser
   ( command "server" (info (pure BarServer) (progDesc "Start a new qbar server. Should be called by swaybar, i3bar or or another i3bar-protocol compatible host process.")) <>
-    command "default" (info (pure NoFilter) (progDesc "Send a message to a running qbar server.")) <>
-    command "rainbow" (info (pure RainbowFilter) (progDesc "Send a message to a running qbar server."))
+    command "default" (info (pure DefaultTheme) (progDesc "Send a message to a running qbar server.")) <>
+    command "rainbow" (info (pure RainbowTheme) (progDesc "Send a message to a running qbar server."))
   )
 
 data MainOptions = MainOptions {

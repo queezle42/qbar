@@ -6,20 +6,17 @@ import QBar.BlockOutput
 import QBar.Core
 import QBar.Cli
 import QBar.ControlSocket
-import QBar.Filter
 import QBar.Host
 import QBar.Themes
 
 import Control.Monad (forever, when, unless, forM_)
-import Control.Monad.STM (atomically)
 import Control.Concurrent.Async
-import Control.Concurrent.STM.TChan (newTChanIO, readTChan)
+import Control.Concurrent.STM.TChan (newTChanIO)
 import Data.Aeson (encode, decode, ToJSON, toJSON, object, (.=))
 import Data.ByteString.Lazy (hPut)
 import qualified Data.ByteString.Char8 as BSSC8
 import qualified Data.ByteString.Lazy as BS
 import qualified Data.ByteString.Lazy.Char8 as C8
-import Data.IORef
 import Data.Maybe (fromMaybe)
 import qualified Data.Text.Lazy as T
 import Pipes
@@ -105,10 +102,6 @@ runBarServer defaultBarConfig options = runBarHost barServer (swayBarInput optio
   where
     barServer :: Consumer [BlockOutput] BarIO ()
     barServer = do
-      -- Create IORef to contain the active filter
-      let initialBlockFilter = StaticFilter None
-      activeFilter <- liftIO $ newIORef initialBlockFilter
-
       -- Load blocks
       lift $ do
         when (indicator options) $ addBlock renderIndicator
@@ -123,10 +116,8 @@ runBarServer defaultBarConfig options = runBarHost barServer (swayBarInput optio
 
       -- Update bar on control socket messages
       socketUpdateAsync <- liftIO $ async $ forever $ do
-        command <- atomically $ readTChan commandChan
-        case command of
-          SetFilter blockFilter -> atomicWriteIORef activeFilter blockFilter
-          Block -> error "TODO"
+        -- command <- atomically $ readTChan commandChan
+        void $ error "TODO"
         updateBar' bar
       liftIO $ link socketUpdateAsync
 
@@ -140,5 +131,5 @@ runQBar :: BarIO () -> MainOptions -> IO ()
 runQBar barConfiguration options@MainOptions{barCommand} = runCommand barCommand
   where
     runCommand BarServer = runBarServer barConfiguration options
-    runCommand NoFilter = sendIpc options $ SetFilter $ StaticFilter None
-    runCommand RainbowFilter = sendIpc options $ SetFilter $ AnimatedFilter Rainbow
+    runCommand DefaultTheme = sendIpc options $ SetTheme "default"
+    runCommand RainbowTheme = sendIpc options $ SetTheme "rainbow"
