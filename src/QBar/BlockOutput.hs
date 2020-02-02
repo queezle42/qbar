@@ -51,12 +51,12 @@ $(deriveJSON defaultOptions ''BlockText)
 
 
 mkBlockOutput :: BlockText -> BlockOutput
-mkBlockOutput text = BlockOutput
-  { _fullText = text
-  , _shortText = Nothing
-  , _blockName = Nothing
-  , _invalid = False
-  }
+mkBlockOutput text = BlockOutput {
+  _fullText = text,
+  _shortText = Nothing,
+  _blockName = Nothing,
+  _invalid = False
+}
 
 mkErrorOutput :: T.Text -> BlockOutput
 mkErrorOutput = mkBlockOutput . importantText criticalImportant
@@ -66,8 +66,6 @@ emptyBlock = mkBlockOutput mempty
 
 addIcon :: T.Text -> BlockOutput -> BlockOutput
 addIcon icon = over fullText $ (<>) . normalText $ icon <> " "
-
-
 
 
 normalImportant :: Importance
