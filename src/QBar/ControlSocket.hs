@@ -34,7 +34,6 @@ import System.Environment (getEnv)
 type CommandChan = TChan Command
 
 data Command = SetTheme T.Text
-  | Block
   deriving Show
 
 data SocketResponse = Success | Error Text
@@ -110,7 +109,7 @@ listenUnixSocket options commandChan = do
       response <- maybe (errorResponse "Empty stream") (either handleError (handleCommand leftovers)) decodeResult
       runEffect (encode response >-> consumer)
     handleCommand :: Producer ByteString IO () -> Command -> IO SocketResponse
-    handleCommand _ Block = error "TODO" -- addBlock $ handleBlockStream leftovers
+    --handleCommand _ Block = error "TODO" -- addBlock $ handleBlockStream leftovers
     handleCommand _ command = do
       atomically $ writeTChan commandChan command
       return Success
