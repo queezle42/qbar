@@ -2,7 +2,7 @@ module QBar.Theme where
 
 import QBar.BlockOutput
 
-import Control.Lens ((^.), (.~))
+import Control.Lens ((^.))
 import Control.Monad.State.Lazy (State, evalState, get, put)
 import Data.Colour.RGBSpace
 import Data.Colour.RGBSpace.HSV (hsv)
@@ -36,7 +36,6 @@ mkTheme theming' = map themeBlock
     themeBlockText theming (BlockText b) = foldMap (themeSegment theming) b
     themeSegment :: SimplifiedTheme -> BlockTextSegment -> PangoText
     themeSegment theming BlockTextSegment {active, importance, text} = (coloredText' $ theming active importance) text
-    themeSegment _ (PangoTextSegment text) = text
 
 
 invalidColor :: Color
@@ -66,16 +65,16 @@ defaultTheme = mkTheme defaultTheme'
       | otherwise                     = (ColorRGB (RGB (0x96 / 255) (0x98 / 255) (0x96 / 255)), Nothing)
 
 
-rainbowTheme :: Double -> [BlockOutput] -> [BlockOutput]
+rainbowTheme :: Double -> Theme
 rainbowTheme time blocks = reverse $ evalState (mapM rainbowBlock $ reverse blocks) 0
   where
-    rainbowBlock :: BlockOutput -> State Integer BlockOutput
+    rainbowBlock :: BlockOutput -> State Integer (PangoText, Maybe PangoText)
     rainbowBlock block = do
       let text = rawText $ block ^. fullText
       let chars = T.unpack . T.reverse $ text
       coloredChars <- mapM rainbowChar chars
       let rainbowText = T.concat . reverse $ coloredChars
-      return $ fullText .~ pangoText rainbowText $ block
+      return (rainbowText, Nothing)
     rainbowChar :: Char -> State Integer T.Text
     rainbowChar char = do
       color <- nextRainbowColor

@@ -3,8 +3,6 @@
 
 module QBar.BlockOutput where
 
-import QBar.Pango
-
 import Control.Lens
 import Data.Aeson.TH
 import Data.Int (Int64)
@@ -37,7 +35,6 @@ data BlockTextSegment = BlockTextSegment {
     importance :: Importance,
     text :: T.Text
   }
-  | PangoTextSegment PangoText
   deriving (Eq, Show)
 
 type PangoText = T.Text
@@ -144,17 +141,12 @@ rawText (BlockText b) = foldMap rawTextFromSegment b
   where
     rawTextFromSegment :: BlockTextSegment -> T.Text
     rawTextFromSegment BlockTextSegment{text} = text
-    rawTextFromSegment (PangoTextSegment text) =
-      case parsePango text of
-        Left _ -> text
-        Right parsed -> removeFormatting parsed
 
 printedLength :: BlockText -> Int64
 printedLength (BlockText b) = sum . map segmentLength $ b
   where
     segmentLength :: BlockTextSegment -> Int64
     segmentLength BlockTextSegment { text } = T.length text
-    segmentLength (PangoTextSegment pango) = either (const $ T.length pango) (T.length . removeFormatting) $ parsePango pango
 
 mkText :: Bool -> Importance -> T.Text -> BlockText
 mkText active importance text = BlockText [BlockTextSegment { text = pangoFriendly text, active, importance }]
@@ -173,9 +165,6 @@ activeText = mkText True normalImportant
 
 normalText :: T.Text -> BlockText
 normalText = mkText False normalImportant
-
-pangoText :: PangoText -> BlockText
-pangoText pango = BlockText [PangoTextSegment pango]
 
 surroundWith :: (T.Text -> BlockText) -> T.Text -> T.Text -> BlockText -> BlockText
 surroundWith format left right middle = format left <> middle <> format right
