@@ -14,6 +14,8 @@ import Control.Exception (IOException)
 import Control.Lens
 import Control.Monad (forever)
 import Control.Monad.Reader (ReaderT, runReaderT, ask)
+import Control.Monad.State (StateT)
+import Control.Monad.Writer (WriterT)
 import Data.Aeson.TH
 import qualified Data.ByteString.Lazy.Char8 as C8
 import Data.Int (Int64)
@@ -92,6 +94,12 @@ class (Monad m) => MonadBarIO m where
 instance MonadBarIO BarIO where
   liftBarIO = id
 instance (MonadBarIO m) => MonadBarIO (Proxy a' a b' b m) where
+  liftBarIO = lift . liftBarIO
+instance (MonadBarIO m) => MonadBarIO (StateT a m) where
+  liftBarIO = lift . liftBarIO
+instance (MonadBarIO m) => MonadBarIO (ReaderT a m) where
+  liftBarIO = lift . liftBarIO
+instance (MonadBarIO m, Monoid a) => MonadBarIO (WriterT a m) where
   liftBarIO = lift . liftBarIO
 
 askBar :: MonadBarIO m => m Bar
