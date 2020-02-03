@@ -87,13 +87,15 @@ newtype BarUpdateChannel = BarUpdateChannel (IO ())
 type BarUpdateEvent = Event.Event
 
 
-class MonadBarIO m where
-  askBar :: m Bar
+class (Monad m) => MonadBarIO m where
+  liftBarIO :: BarIO a -> m a
 instance MonadBarIO BarIO where
-  askBar = lift ask
-instance MonadBarIO (Proxy a' a b' b BarIO) where
-  askBar = lift askBar
+  liftBarIO = id
+instance (MonadBarIO m) => MonadBarIO (Proxy a' a b' b m) where
+  liftBarIO = lift . liftBarIO
 
+askBar :: MonadBarIO m => m Bar
+askBar = liftBarIO $ lift ask
 
 mkBlockState :: BlockOutput -> BlockState
 mkBlockState blockOutput = Just (blockOutput, Nothing)
