@@ -59,6 +59,9 @@ ghc-options:
 
 library:
   source-dirs: src
+  other-modules:
+  - Prelude
+  - BasePrelude
 
 executables:
   qbar:
