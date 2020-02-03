@@ -47,7 +47,7 @@ type BlockEventHandler = BlockEvent -> BarIO ()
 
 type BlockState = Maybe (BlockOutput, Maybe BlockEventHandler)
 
-type Block a = Producer BlockState BarIO a
+type Block = Producer BlockState BarIO
 
 
 -- |Block that 'yield's an update whenever the block should be changed
@@ -83,7 +83,7 @@ data Bar = Bar {
 }
 
 
-data BarUpdateChannel = BarUpdateChannel (IO ())
+newtype BarUpdateChannel = BarUpdateChannel (IO ())
 type BarUpdateEvent = Event.Event
 
 
