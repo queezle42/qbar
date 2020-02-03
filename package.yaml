@@ -55,6 +55,7 @@ ghc-options:
 - -fwarn-tabs
 - -Wall
 - -Werror
+- -Wwarn=deprecations
 - -O2
 
 library:
