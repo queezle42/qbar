@@ -7,6 +7,7 @@ import QBar.Core
 import QBar.Cli
 import QBar.ControlSocket
 import QBar.Host
+import QBar.Pango
 import QBar.Theme
 
 import Control.Monad (forever, when, unless, forM_)
@@ -21,7 +22,6 @@ import Data.Maybe (fromMaybe)
 import qualified Data.Text.Lazy as T
 import Pipes
 import System.IO (stdin, stdout, stderr, hFlush)
-import Control.Lens hiding (each, (.=))
 
 renderIndicator :: CachedBlock
 -- Using 'cachedBlock' is a hack to actually get the block to update on every bar update (by doing this it will not get a cache later in the pipeline).
@@ -70,9 +70,13 @@ swayBarOutput MainOptions{verbose} = do
 
       swayBarOutput'
     encodeOutput :: [BlockOutput] -> BS.ByteString
-    encodeOutput bs = encode $ zipWith encodeBlock bs $ defaultTheme bs
-    encodeBlock :: BlockOutput -> (T.Text, Maybe T.Text) -> RenderBlock
-    encodeBlock b (fullText', shortText') = RenderBlock fullText' shortText' (b ^. blockName)
+    encodeOutput bs = encode $ map encodeBlock $ defaultTheme bs
+    encodeBlock :: ThemedBlockOutput -> RenderBlock
+    encodeBlock ThemedBlockOutput{_fullText, _shortText, _blockName} = RenderBlock {
+      renderBlockFullText = renderPango _fullText,
+      renderBlockShortText = renderPango <$> _shortText,
+      renderBlockName = _blockName
+    }
 
 -- |A producer that reads swaybar/i3bar-input events from stdin and emits them as 'BlockEvent's.
 swayBarInput :: MainOptions -> Producer BlockEvent BarIO ()

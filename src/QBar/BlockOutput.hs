@@ -28,11 +28,9 @@ instance Monoid BlockText where
 data BlockTextSegment = BlockTextSegment {
     active :: Bool,
     importance :: Importance,
-    text :: T.Text
+    segmentText :: T.Text
   }
   deriving (Eq, Show)
-
-type PangoText = T.Text
 
 type Importance = Float
 
@@ -135,16 +133,16 @@ rawText :: BlockText -> T.Text
 rawText (BlockText b) = foldMap rawTextFromSegment b
   where
     rawTextFromSegment :: BlockTextSegment -> T.Text
-    rawTextFromSegment BlockTextSegment{text} = text
+    rawTextFromSegment BlockTextSegment{segmentText} = segmentText
 
 printedLength :: BlockText -> Int64
 printedLength (BlockText b) = sum . map segmentLength $ b
   where
     segmentLength :: BlockTextSegment -> Int64
-    segmentLength BlockTextSegment { text } = T.length text
+    segmentLength BlockTextSegment { segmentText } = T.length segmentText
 
 mkText :: Bool -> Importance -> T.Text -> BlockText
-mkText active importance text = BlockText [BlockTextSegment { text = pangoFriendly text, active, importance }]
+mkText active importance segmentText = BlockText [BlockTextSegment { segmentText = pangoFriendly segmentText, active, importance }]
   where
     pangoFriendly :: T.Text -> T.Text
     pangoFriendly = T.replace "<" "&lt;" . T.replace ">" "&gt;" . T.replace "&" "&amp;"
