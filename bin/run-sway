@@ -3,9 +3,10 @@
 set -e
 set -u
 
-readonly default_bar_command="$(swaymsg -t get_bar_config bar-0 | jq --raw-output .status_command)"
 readonly executable_name=qbar
 readonly sway_bar_id=bar-0
+
+readonly default_bar_command="$(swaymsg -t get_bar_config "$sway_bar_id" | jq .status_command)"
 
 stack build
 
@@ -13,7 +14,7 @@ readonly temp_dir=$(mktemp -d)
 readonly stderr=$temp_dir/stderr
 mkfifo $stderr
 
-trap "swaymsg bar $sway_bar_id status_command $default_bar_command; rm -rf $temp_dir" EXIT INT HUP TERM
+trap "swaymsg bar $sway_bar_id status_command '$default_bar_command'; rm -rf $temp_dir" EXIT INT HUP TERM
 
 swaymsg bar $sway_bar_id status_command "exec $(stack path --local-install-root)/bin/$executable_name $@ -- server 2> $stderr"
 
