@@ -13,6 +13,7 @@ module Prelude
     traceShow,
     traceShowId,
     Maybe.listToMaybe,
+    intercalate
   )
 where
 
@@ -60,3 +61,9 @@ traceShow = Trace.traceShow
 {-# DEPRECATED traceShowId "Partitial Function." #-}
 traceShowId :: Show a => a -> a
 traceShowId = Trace.traceShowId
+
+
+intercalate :: Monoid a => a -> [a] -> a
+intercalate _ [] = mempty
+intercalate _ [x] = x
+intercalate inter (x:xs) = x <> inter <> intercalate inter xs
