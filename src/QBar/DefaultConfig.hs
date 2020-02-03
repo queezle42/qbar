@@ -21,7 +21,7 @@ generateDefaultBarConfig = do
   let cpu = systemInfoInterval (blockScript $ blockLocation "cpu_usage") >-> modify ((blockName ?~ "cpu") . addIcon "💻\xFE0E") >-> autoPadding
   let ram = systemInfoInterval (blockScript $ blockLocation "memory") >-> modify (addIcon "🐏\xFE0E") >-> autoPadding
   let temperature = systemInfoInterval (blockScript $ blockLocation "temperature") >-> autoPadding
-  let volumeBlock = startPersistentBlockScript $ blockLocation "volume-pulseaudio -S -F3"
+  let volumeBlock = persistentBlockScript $ blockLocation "volume-pulseaudio -S -F3"
   let battery = systemInfoInterval $ batteryBlock >-> modify (blockName ?~ "battery")
 
   addBlock dateBlock

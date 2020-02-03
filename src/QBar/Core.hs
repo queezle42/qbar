@@ -242,9 +242,9 @@ blockScript path = forever $ updateBlock =<< (lift blockScriptAction)
     createScriptBlock' :: Bool -> Importance -> T.Text -> BlockOutput
     createScriptBlock' active importance text = blockName ?~ T.pack path $ mkBlockOutput $ mkText active importance text
 
-startPersistentBlockScript :: FilePath -> PushBlock
+persistentBlockScript :: FilePath -> PushBlock
 -- The outer catchP only catches errors that occur during process creation
-startPersistentBlockScript path = catchP startScriptProcess handleError
+persistentBlockScript path = catchP startScriptProcess handleError
   where
     handleError :: IOException -> PushBlock
     handleError e = do
