@@ -27,18 +27,18 @@ renderIndicator :: CachedBlock
 -- Using 'cachedBlock' is a hack to actually get the block to update on every bar update (by doing this it will not get a cache later in the pipeline).
 renderIndicator = forever $ each $ map (mkBlockState . mkBlockOutput . normalText) ["/", "-", "\\", "|"]
 
-data RenderBlock = RenderBlock {
-  renderBlockFullText :: PangoText,
-  renderBlockShortText :: Maybe PangoText,
-  renderBlockName :: Maybe T.Text
+data PangoBlock = PangoBlock {
+  pangoBlockFullText :: PangoText,
+  pangoBlockShortText :: Maybe PangoText,
+  pangoBlockName :: Maybe T.Text
 } deriving(Show)
-instance ToJSON RenderBlock where
-  toJSON RenderBlock{renderBlockFullText, renderBlockShortText, renderBlockName} = object $
+instance ToJSON PangoBlock where
+  toJSON PangoBlock{pangoBlockFullText, pangoBlockShortText, pangoBlockName} = object $
     fullText' <> shortText' <> blockName' <> pango'
     where
-      fullText' = [ "full_text" .= renderBlockFullText ]
-      shortText' = fromMaybe (\s -> ["short_text" .= s]) mempty renderBlockShortText
-      blockName' = fromMaybe (\s -> ["name" .= s]) mempty renderBlockName
+      fullText' = [ "full_text" .= pangoBlockFullText ]
+      shortText' = fromMaybe (\s -> ["short_text" .= s]) mempty pangoBlockShortText
+      blockName' = fromMaybe (\s -> ["name" .= s]) mempty pangoBlockName
       pango' = [ "markup" .= ("pango" :: T.Text) ]
 
 
@@ -56,7 +56,8 @@ swayBarOutput MainOptions{verbose} = do
     swayBarOutput' = do
       blocks <- await
 
-      let encodedOutput = encodeOutput blocks
+      let themedOutput = defaultTheme blocks
+      let encodedOutput = encodeOutput themedOutput
 
       liftIO $ do
         hPut stdout encodedOutput
@@ -69,13 +70,13 @@ swayBarOutput MainOptions{verbose} = do
           hFlush stderr
 
       swayBarOutput'
-    encodeOutput :: [BlockOutput] -> BS.ByteString
-    encodeOutput bs = encode $ map encodeBlock $ defaultTheme bs
-    encodeBlock :: ThemedBlockOutput -> RenderBlock
-    encodeBlock ThemedBlockOutput{_fullText, _shortText, _blockName} = RenderBlock {
-      renderBlockFullText = renderPango _fullText,
-      renderBlockShortText = renderPango <$> _shortText,
-      renderBlockName = _blockName
+    encodeOutput :: [ThemedBlockOutput] -> BS.ByteString
+    encodeOutput blocks = encode $ map renderPangoBlock $ blocks
+    renderPangoBlock :: ThemedBlockOutput -> PangoBlock
+    renderPangoBlock ThemedBlockOutput{_fullText, _shortText, _blockName} = PangoBlock {
+      pangoBlockFullText = renderPango _fullText,
+      pangoBlockShortText = renderPango <$> _shortText,
+      pangoBlockName = _blockName
     }
 
 -- |A producer that reads swaybar/i3bar-input events from stdin and emits them as 'BlockEvent's.
