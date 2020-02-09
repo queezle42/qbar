@@ -31,7 +31,8 @@ import System.Environment (getEnv)
 
 type CommandHandler = Command -> IO CommandResult
 
-data RequestType = Command
+data Request = Command Command | ConnectBarHost
+  deriving Show
 
 data Command = SetTheme TL.Text
   deriving Show
@@ -39,6 +40,7 @@ data Command = SetTheme TL.Text
 data CommandResult = Success | Error Text
   deriving Show
 
+$(deriveJSON defaultOptions ''Request)
 $(deriveJSON defaultOptions ''Command)
 $(deriveJSON defaultOptions ''CommandResult)
 
@@ -68,7 +70,8 @@ ipcSocketAddress MainOptions{socketLocation} = maybe defaultSocketPath (return .
     handleEnvError = handle (const $ return Nothing :: IOError -> IO (Maybe FilePath)) . fmap Just
 
 sendIpc :: MainOptions -> Command -> IO ()
-sendIpc options@MainOptions{verbose} request = do
+sendIpc options@MainOptions{verbose} command = do
+  let request = Command command
   socketPath <- ipcSocketAddress options
   sock <- socket AF_UNIX Stream defaultProtocol
   connect sock $ SockAddrUnix socketPath
@@ -105,22 +108,36 @@ listenUnixSocket options commandHandler = do
     socketHandler :: Socket -> IO ()
     socketHandler sock = streamHandler (fromSocket sock 4096) (toSocket sock)
     streamHandler :: Producer ByteString IO () -> Consumer ByteString IO () -> IO ()
-    streamHandler producer consumer = do
-      (decodeResult, leftovers) <- runStateT decode producer
-      response <- maybe (errorResponse "Empty stream") (either handleError (handleCommand leftovers)) decodeResult
-      runEffect (encode response >-> consumer)
-    handleCommand :: Producer ByteString IO () -> Command -> IO CommandResult
-    --handleCommand _ Block = error "TODO" -- addBlock $ handleBlockStream leftovers
-    handleCommand _ command = commandHandler command
-    handleError :: DecodingError -> IO CommandResult
-    handleError = return . Error . pack . show
-    errorResponse :: Text -> IO CommandResult
-    errorResponse message = return $ Error message
+    streamHandler producer responseConsumer = do
+      (maybeDecodeResult, leftovers) <- runStateT decode producer
+      -- Handle empty result
+      case maybeDecodeResult of
+        Nothing -> reply $ errorResponse "Empty stream"
+        Just decodeResult -> case decodeResult of
+          Left err -> reply $ handleError err
+          Right request -> handleRequest leftovers responseConsumer request
+      where
+        reply :: Producer ByteString IO () -> IO ()
+        reply response = runEffect (response >-> responseConsumer)
+
+    handleRequest :: Producer ByteString IO () -> Consumer ByteString IO () -> Request -> IO ()
+    handleRequest _leftovers responseConsumer (Command command) = runEffect (handleCommand command >-> responseConsumer)
+    --handleRequest leftovers Block = addBlock $ handleBlockStream leftovers
+    handleRequest _leftovers _responseConsumer ConnectBarHost = error "TODO"
+
+    handleCommand :: Command -> Producer ByteString IO ()
+    handleCommand command = do
+      result <- liftIO $ commandHandler command
+      encode result
+    handleError :: DecodingError -> Producer ByteString IO ()
+    handleError = encode . Error . pack . show
+    errorResponse :: Text -> Producer ByteString IO ()
+    errorResponse message = encode $ Error message
 
 handleBlockStream :: Producer ByteString IO () -> PushBlock
 handleBlockStream producer = do
   (decodeResult, leftovers) <- liftIO $ runStateT decode producer
-  maybe exitBlock (either (\_ -> exitBlock) (handleParsedBlock leftovers)) decodeResult
+  maybe exitBlock (either (const exitBlock) (handleParsedBlock leftovers)) decodeResult
   where
     handleParsedBlock :: Producer ByteString IO () -> String -> PushBlock
     handleParsedBlock leftovers update = do
