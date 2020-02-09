@@ -69,7 +69,6 @@ findTheme themeName = maybe invalidThemeName Right $ HM.lookup themeName themes
   where
     invalidThemeName = Left $ "Invalid theme: " <> themeName
 
-
 mkTheme :: SimplifiedTheme -> Theme
 mkTheme theming' = StaticTheme $ map themeBlock
   where
@@ -89,8 +88,21 @@ mkTheme theming' = StaticTheme $ map themeBlock
     themeSegment :: SimplifiedTheme -> BlockTextSegment -> ThemedBlockTextSegment
     themeSegment theming BlockTextSegment {active, importance, segmentText} = mkThemedSegment (theming active importance) segmentText
 
+mkThemedBlockOutput :: (Color, Maybe Color) -> Text -> ThemedBlockOutput
+mkThemedBlockOutput color text = ThemedBlockOutput {
+  _fullText = mkThemedText color text,
+  _shortText = Nothing,
+  _blockName = Nothing
+}
+
+mkThemedText :: (Color, Maybe Color) -> Text -> ThemedBlockText
+mkThemedText color text = ThemedBlockText [mkThemedSegment color text]
+
 mkThemedSegment :: (Color, Maybe Color) -> Text -> ThemedBlockTextSegment
 mkThemedSegment (color, backgroundColor) text = ThemedBlockTextSegment{themedSegmentText=text, color, backgroundColor}
+
+whiteThemedBlockOutput :: Text -> ThemedBlockOutput
+whiteThemedBlockOutput = mkThemedBlockOutput (ColorRGB (RGB 1 1 1), Nothing)
 
 
 invalidColor :: Color
@@ -151,4 +163,3 @@ rainbowTheme = AnimatedTheme rainbowThemePipe
           let hue' = position * 3
               color = hsv hue' 0.8 1.0
           in ColorRGB color
-

@@ -12,7 +12,7 @@ import QBar.Pango
 import QBar.Theme
 import QBar.Util
 
-import Control.Monad (forever, when, unless, forM_)
+import Control.Monad (when, unless, forM_)
 import Control.Concurrent.Async (async, link)
 import Control.Concurrent.Event as Event
 import Control.Concurrent.MVar (MVar, newMVar, modifyMVar, modifyMVar_)
@@ -29,9 +29,8 @@ import Pipes.Concurrent (Input, spawn, latest, toOutput, fromInput)
 import qualified Pipes.Prelude as PP
 import System.IO (stdin, stdout, stderr, hFlush)
 
-renderIndicator :: CachedBlock
--- Using 'cachedBlock' is a hack to actually get the block to update on every bar update (by doing this it will not get a cache later in the pipeline).
-renderIndicator = forever $ each $ map (mkBlockState . mkBlockOutput . normalText) ["/", "-", "\\", "|"]
+renderIndicators :: [Text]
+renderIndicators = ["*"] <> cycle ["/", "-", "\\", "|"]
 
 data PangoBlock = PangoBlock {
   pangoBlockFullText :: PangoText,
@@ -75,18 +74,27 @@ swayBarInput MainOptions{verbose} = swayBarInput'
 
 
 swayBarOutput :: MainOptions -> Consumer [ThemedBlockOutput] IO ()
-swayBarOutput options = do
+swayBarOutput options@MainOptions{indicator} = do
   -- Print header
   liftIO $ do
     putStrLn "{\"version\":1,\"click_events\":true}"
     putStrLn "["
 
-  swayBarOutput'
+  if indicator
+    then swayBarOutputWithIndicator' renderIndicators
+    else swayBarOutput'
   where
     swayBarOutput' :: Consumer [ThemedBlockOutput] IO ()
     swayBarOutput' = do
-      await >>= (liftIO . outputLine options)
+      blockOutputs <- await
+      liftIO $ outputLine options blockOutputs
       swayBarOutput'
+    swayBarOutputWithIndicator' :: [Text] -> Consumer [ThemedBlockOutput] IO ()
+    swayBarOutputWithIndicator' [] = throw $ userError "List should be infinite"
+    swayBarOutputWithIndicator' (ind : inds) = do
+      blockOutputs <- await
+      liftIO $ outputLine options (blockOutputs <> [whiteThemedBlockOutput ind])
+      swayBarOutputWithIndicator' inds
     outputLine :: MainOptions -> [ThemedBlockOutput] -> IO ()
     outputLine MainOptions{verbose} themedBlocks = do
       let encodedOutput = encodeOutput themedBlocks
@@ -110,14 +118,8 @@ swayBarOutput options = do
     }
 
 runBarServer :: BarIO () -> MainOptions -> IO ()
-runBarServer defaultBarConfig options = runBarHost barServer (swayBarInput options) loadBlocks
+runBarServer defaultBarConfig options = runBarHost barServer (swayBarInput options) defaultBarConfig
   where
-    loadBlocks :: BarIO ()
-    loadBlocks = do
-      -- Load blocks
-      when (indicator options) $ addBlock renderIndicator
-      defaultBarConfig
-
     barServer :: Consumer [BlockOutput] IO ()
     barServer = do
       -- Event to render the bar (fired when block output or theme is changed)
