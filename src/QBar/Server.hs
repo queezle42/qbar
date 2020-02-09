@@ -138,7 +138,7 @@ runBarServer defaultBarConfig options = runBarHost barServer (swayBarInput optio
       controlSocketAsync <- liftIO $ listenUnixSocketAsync options commandChan
       liftIO $ link controlSocketAsync
 
-      -- Update bar on control socket messages
+      -- Handle control socket messages
       socketUpdateAsync <- liftIO $ async $ forever $ do
         command <- atomically $ readTChan commandChan
         case command of
