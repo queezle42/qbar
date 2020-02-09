@@ -2,17 +2,24 @@
 
 module QBar.Cli where
 
+import QBar.Theme
+
 import qualified Data.Text as T
+import qualified Data.Text.Lazy as TL
 import Options.Applicative
 
-data BarCommand = BarServer | DefaultTheme | RainbowTheme
+data BarCommand = BarServerCommand | SetThemeCommand Text
 
 barCommandParser :: Parser BarCommand
-barCommandParser = hsubparser
-  ( command "server" (info (pure BarServer) (progDesc "Start a new qbar server. Should be called by swaybar, i3bar or or another i3bar-protocol compatible host process.")) <>
-    command "default" (info (pure DefaultTheme) (progDesc "Send a message to a running qbar server.")) <>
-    command "rainbow" (info (pure RainbowTheme) (progDesc "Send a message to a running qbar server."))
+barCommandParser = hsubparser (
+    command "server" (info (pure BarServerCommand) (progDesc "Start a new qbar server. Should be called by swaybar, i3bar or or another i3bar-protocol compatible host process.")) <>
+    command "theme" (info themeCommandParser (progDesc "Change the theme of the running qbar server.")) <>
+    command "default" (info (pure $ SetThemeCommand "default") (progDesc "Shortcut for 'qbar theme default'.")) <>
+    command "rainbow" (info (pure $ SetThemeCommand "rainbow") (progDesc "Shortcut for 'qbar theme rainbow'."))
   )
+
+themeCommandParser :: Parser BarCommand
+themeCommandParser = SetThemeCommand <$> strArgument (metavar "THEME" <> completeWith (map TL.unpack themeNames))
 
 data MainOptions = MainOptions {
   verbose :: Bool,

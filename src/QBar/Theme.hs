@@ -9,6 +9,7 @@ import Control.Lens ((^.))
 import Control.Monad.State.Lazy (State, evalState, get, put)
 import Data.Colour.RGBSpace
 import Data.Colour.RGBSpace.HSV (hsv)
+import qualified Data.HashMap.Lazy as HM
 import qualified Data.Text.Lazy as T
 import Data.Time.Clock.POSIX (getPOSIXTime)
 import Pipes
@@ -50,10 +51,23 @@ isAnimated (AnimatedTheme _) = True
 isAnimated _ = False
 
 
+themesList :: [(Text, Theme)]
+themesList = [
+    ("default", defaultTheme),
+    ("rainbow", rainbowTheme)
+  ]
+
+themeNames :: [Text]
+themeNames = map fst themesList
+
+themes :: HM.HashMap Text Theme
+themes = HM.fromList themesList
+
+
 findTheme :: Text -> Either Text Theme
-findTheme "default" = Right defaultTheme
-findTheme "rainbow" = Right rainbowTheme
-findTheme name = Left $ "Invalid theme: " <> name
+findTheme themeName = maybe invalidThemeName Right $ HM.lookup themeName themes
+  where
+    invalidThemeName = Left $ "Invalid theme: " <> themeName
 
 
 mkTheme :: SimplifiedTheme -> Theme

@@ -193,6 +193,5 @@ runBarServer defaultBarConfig options = runBarHost barServer (swayBarInput optio
 runQBar :: BarIO () -> MainOptions -> IO ()
 runQBar barConfiguration options@MainOptions{barCommand} = runCommand barCommand
   where
-    runCommand BarServer = runBarServer barConfiguration options
-    runCommand DefaultTheme = sendIpc options $ SetTheme "default"
-    runCommand RainbowTheme = sendIpc options $ SetTheme "rainbow"
+    runCommand BarServerCommand = runBarServer barConfiguration options
+    runCommand (SetThemeCommand themeName) = sendIpc options $ SetTheme themeName
