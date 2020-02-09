@@ -52,10 +52,10 @@ instance ToJSON PangoBlock where
 
 
 -- |A producer that reads swaybar/i3bar-input events from stdin and emits them as 'BlockEvent's.
-swayBarInput :: MainOptions -> Producer BlockEvent BarIO ()
+swayBarInput :: MainOptions -> Producer BlockEvent IO ()
 swayBarInput MainOptions{verbose} = swayBarInput'
   where
-    swayBarInput' :: Producer BlockEvent BarIO ()
+    swayBarInput' :: Producer BlockEvent IO ()
     swayBarInput' = do
       line <- liftIO $ BSSC8.hGetLine stdin
 
@@ -77,20 +77,32 @@ swayBarInput MainOptions{verbose} = swayBarInput'
       | otherwise = line
 
 
-outputLine :: MainOptions -> [ThemedBlockOutput] -> IO ()
-outputLine MainOptions{verbose} themedBlocks = do
-  let encodedOutput = encodeOutput themedBlocks
-
+swayBarOutput :: MainOptions -> Consumer [ThemedBlockOutput] IO ()
+swayBarOutput options = do
+  -- Print header
   liftIO $ do
-    hPut stdout encodedOutput
-    putStrLn ","
-    hFlush stdout
-    -- Echo output to stderr when verbose flag is set
-    when verbose $ do
-      hPut stderr encodedOutput
-      hPut stderr "\n"
-      hFlush stderr
+    putStrLn "{\"version\":1,\"click_events\":true}"
+    putStrLn "["
+
+  swayBarOutput'
   where
+    swayBarOutput' :: Consumer [ThemedBlockOutput] IO ()
+    swayBarOutput' = do
+      await >>= (liftIO . outputLine options)
+      swayBarOutput'
+    outputLine :: MainOptions -> [ThemedBlockOutput] -> IO ()
+    outputLine MainOptions{verbose} themedBlocks = do
+      let encodedOutput = encodeOutput themedBlocks
+
+      liftIO $ do
+        hPut stdout encodedOutput
+        putStrLn ","
+        hFlush stdout
+        -- Echo output to stderr when verbose flag is set
+        when verbose $ do
+          hPut stderr encodedOutput
+          hPut stderr "\n"
+          hFlush stderr
     encodeOutput :: [ThemedBlockOutput] -> BS.ByteString
     encodeOutput blocks = encode $ map renderPangoBlock $ blocks
     renderPangoBlock :: ThemedBlockOutput -> PangoBlock
@@ -101,16 +113,16 @@ outputLine MainOptions{verbose} themedBlocks = do
     }
 
 runBarServer :: BarIO () -> MainOptions -> IO ()
-runBarServer defaultBarConfig options = runBarHost barServer (swayBarInput options)
+runBarServer defaultBarConfig options = runBarHost barServer (swayBarInput options) loadBlocks
   where
-    barServer :: Consumer [BlockOutput] BarIO ()
-    barServer = do
+    loadBlocks :: BarIO ()
+    loadBlocks = do
       -- Load blocks
-      lift $ do
-        when (indicator options) $ addBlock renderIndicator
-        defaultBarConfig
+      when (indicator options) $ addBlock renderIndicator
+      defaultBarConfig
 
-
+    barServer :: Consumer [BlockOutput] IO ()
+    barServer = do
       -- Event to render the bar (fired when block output or theme is changed)
       renderEvent <- liftIO Event.new
 
@@ -118,7 +130,7 @@ runBarServer defaultBarConfig options = runBarHost barServer (swayBarInput optio
       (output, input) <- liftIO $ spawn $ latest []
 
       -- MVar that holds the current theme, linked to the input from the above mailbox
-      (themedBlockProducerMVar :: MVar (Producer [ThemedBlockOutput] IO (), Bool)) <- liftIO $ newMVar $ (return (), False)
+      (themedBlockProducerMVar :: MVar (Producer [ThemedBlockOutput] IO (), Bool)) <- liftIO $ newMVar $ throw $ userError "Unexpected behavior: Default theme not set"
 
 
       -- Create control socket
@@ -143,9 +155,6 @@ runBarServer defaultBarConfig options = runBarHost barServer (swayBarInput optio
         -- Set default theme
         setTheme input themedBlockProducerMVar defaultTheme
 
-        -- Print header
-        putStrLn "{\"version\":1,\"click_events\":true}"
-        putStrLn "["
         -- Run render loop
         liftIO $ link =<< async (renderLoop renderEvent themedBlockProducerMVar)
 
@@ -153,21 +162,29 @@ runBarServer defaultBarConfig options = runBarHost barServer (swayBarInput optio
       signalPipe renderEvent >-> toOutput output
 
     renderLoop :: Event.Event -> MVar (Producer [ThemedBlockOutput] IO (), Bool) -> IO ()
-    renderLoop renderEvent themedBlockProducerMVar = forever $ do
-      (themedBlocks, isAnimated'') <- modifyMVar themedBlockProducerMVar (\(themedBlockProducer, isAnimated') -> do
-        result <- next themedBlockProducer
-        case result of
-          -- TODO: fix type safety on this somehow?
-          Left _ -> throw $ userError "Unexpected behavior: themes and mailboxes should never return"
-          Right (themedBlocks, nextThemedBlockProducer) ->
-            return ((nextThemedBlockProducer, isAnimated'), (themedBlocks, isAnimated'))
-        )
-      outputLine options themedBlocks
-      if isAnimated''
-        -- Limit to 10 FPS because swaybar rendering is surprisingly expensive
-        -- TODO: make FPS configurable
-        then void $ Event.waitTimeout renderEvent 100000
-        else Event.wait renderEvent
+    renderLoop renderEvent themedBlockProducerMVar = runEffect $
+      themeAnimator renderEvent themedBlockProducerMVar >-> filterDuplicates >-> swayBarOutput options
+
+    themeAnimator :: Event.Event -> MVar (Producer [ThemedBlockOutput] IO (), Bool) -> Producer [ThemedBlockOutput] IO ()
+    themeAnimator renderEvent themedBlockProducerMVar = themeAnimator'
+      where
+        themeAnimator' :: Producer [ThemedBlockOutput] IO ()
+        themeAnimator' = do
+          (themedBlocks, isAnimated'') <- liftIO $ modifyMVar themedBlockProducerMVar (\(themedBlockProducer, isAnimated') -> do
+            result <- next themedBlockProducer
+            case result of
+              -- TODO: fix type safety on this somehow?
+              Left _ -> throw $ userError "Unexpected behavior: Themes and output cache mailbox should never return"
+              Right (themedBlocks, nextThemedBlockProducer) ->
+                return ((nextThemedBlockProducer, isAnimated'), (themedBlocks, isAnimated'))
+            )
+          yield themedBlocks
+          liftIO $ if isAnimated''
+            -- Limit to 10 FPS because swaybar rendering is surprisingly expensive
+            -- TODO: make FPS configurable
+            then void $ Event.waitTimeout renderEvent 100000
+            else Event.wait renderEvent
+          themeAnimator'
 
     setTheme :: Input [BlockOutput] -> MVar (Producer [ThemedBlockOutput] IO (), Bool) -> Theme -> IO ()
     setTheme blockOutputInput themedBlockProducerMVar (StaticTheme theme) =
