@@ -1,4 +1,6 @@
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE Rank2Types #-}
+
 module QBar.Theme where
 
 import QBar.BlockOutput
@@ -37,13 +39,25 @@ data ThemedBlockTextSegment = ThemedBlockTextSegment {
   deriving (Eq, Show)
 
 
-type Theme = [BlockOutput] -> [ThemedBlockOutput]
+data Theme = StaticTheme StaticTheme | AnimatedTheme AnimatedTheme
+
+type StaticTheme = [BlockOutput] -> [ThemedBlockOutput]
 type SimplifiedTheme = Bool -> Importance -> (Color, Maybe Color)
-type AnimatedTheme = Pipe [BlockOutput] [ThemedBlockOutput] IO ()
+type AnimatedTheme = forall r. Pipe [BlockOutput] [ThemedBlockOutput] IO r
+
+isAnimated :: Theme -> Bool
+isAnimated (AnimatedTheme _) = True
+isAnimated _ = False
+
+
+findTheme :: Text -> Either Text Theme
+findTheme "default" = Right defaultTheme
+findTheme "rainbow" = Right rainbowTheme
+findTheme name = Left $ "Invalid theme: " <> name
 
 
 mkTheme :: SimplifiedTheme -> Theme
-mkTheme theming' = map themeBlock
+mkTheme theming' = StaticTheme $ map themeBlock
   where
     themeBlock :: BlockOutput -> ThemedBlockOutput
     themeBlock block@BlockOutput{_blockName} = ThemedBlockOutput{_fullText = fullText', _shortText = shortText', _blockName}
@@ -68,14 +82,8 @@ mkThemedSegment (color, backgroundColor) text = ThemedBlockTextSegment{themedSeg
 invalidColor :: Color
 invalidColor = ColorRGBA (RGB (0x96 / 255) (0x98 / 255) (0x96 / 255)) (0x77 / 255)
 
-
 invalidSimplifiedTheme :: SimplifiedTheme
 invalidSimplifiedTheme _ _ = (invalidColor, Nothing)
-
-
-invalidTheme :: Theme
-invalidTheme = mkTheme invalidSimplifiedTheme
-
 
 defaultTheme :: Theme
 defaultTheme = mkTheme defaultTheme'
@@ -92,13 +100,16 @@ defaultTheme = mkTheme defaultTheme'
       | otherwise                     = (ColorRGB (RGB (0x96 / 255) (0x98 / 255) (0x96 / 255)), Nothing)
 
 
-rainbowTheme :: AnimatedTheme
-rainbowTheme = do
-  time <- liftIO $ fromRational . toRational <$> getPOSIXTime
-  yield =<< rainbowTheme' time <$> await
+rainbowTheme :: Theme
+rainbowTheme = AnimatedTheme rainbowThemePipe
   where
-    rainbowTheme' :: Double -> Theme
-    rainbowTheme' time blocks = reverse $ evalState (mapM rainbowBlock $ reverse blocks) 0
+    rainbowThemePipe :: AnimatedTheme
+    rainbowThemePipe = do
+      time <- liftIO $ fromRational . toRational <$> getPOSIXTime
+      yield =<< rainbowThemePipe' time <$> await
+      rainbowThemePipe
+    rainbowThemePipe' :: Double -> StaticTheme
+    rainbowThemePipe' time blocks = reverse $ evalState (mapM rainbowBlock $ reverse blocks) 0
       where
         rainbowBlock :: BlockOutput -> State Integer ThemedBlockOutput
         rainbowBlock block@BlockOutput{_blockName} = do

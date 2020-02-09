@@ -12,7 +12,7 @@ import Control.Monad (forever, void, when)
 import Control.Monad.STM (atomically)
 import Control.Concurrent (forkFinally)
 import Control.Concurrent.Async
-import Control.Concurrent.STM.TChan (TChan, writeTChan)
+import Control.Concurrent.STM.TChan (TChan, newTChanIO, writeTChan)
 import Data.Aeson.TH
 import Data.ByteString (ByteString)
 import System.FilePath ((</>))
@@ -33,7 +33,7 @@ import System.Environment (getEnv)
 
 type CommandChan = TChan Command
 
-data Command = SetTheme T.Text
+data Command = SetTheme TL.Text
   deriving Show
 
 data SocketResponse = Success | Error Text
@@ -41,6 +41,9 @@ data SocketResponse = Success | Error Text
 
 $(deriveJSON defaultOptions ''Command)
 $(deriveJSON defaultOptions ''SocketResponse)
+
+createCommandChan :: IO CommandChan
+createCommandChan = newTChanIO
 
 ipcSocketAddress :: MainOptions -> IO FilePath
 ipcSocketAddress MainOptions{socketLocation} = maybe defaultSocketPath (return . T.unpack) socketLocation
