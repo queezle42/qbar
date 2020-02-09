@@ -9,10 +9,8 @@ import QBar.BlockOutput
 
 import Control.Exception (handle)
 import Control.Monad (forever, void, when)
-import Control.Monad.STM (atomically)
 import Control.Concurrent (forkFinally)
 import Control.Concurrent.Async
-import Control.Concurrent.STM.TChan (TChan, newTChanIO, writeTChan)
 import Data.Aeson.TH
 import Data.ByteString (ByteString)
 import System.FilePath ((</>))
@@ -31,19 +29,19 @@ import Pipes.Network.TCP (fromSocket, toSocket)
 import System.Directory (removeFile, doesFileExist)
 import System.Environment (getEnv)
 
-type CommandChan = TChan Command
+type CommandHandler = Command -> IO CommandResult
+
+data RequestType = Command
 
 data Command = SetTheme TL.Text
   deriving Show
 
-data SocketResponse = Success | Error Text
+data CommandResult = Success | Error Text
   deriving Show
 
 $(deriveJSON defaultOptions ''Command)
-$(deriveJSON defaultOptions ''SocketResponse)
+$(deriveJSON defaultOptions ''CommandResult)
 
-createCommandChan :: IO CommandChan
-createCommandChan = newTChanIO
 
 ipcSocketAddress :: MainOptions -> IO FilePath
 ipcSocketAddress MainOptions{socketLocation} = maybe defaultSocketPath (return . T.unpack) socketLocation
@@ -83,15 +81,15 @@ sendIpc options@MainOptions{verbose} request = do
     exitEmptyStream = hPutStrLn stderr "Empty stream"
     exitInvalidResult :: DecodingError -> IO ()
     exitInvalidResult = hPrint stderr
-    showResponse :: SocketResponse -> IO ()
+    showResponse :: CommandResult -> IO ()
     showResponse Success = when verbose $ hPutStrLn stderr "Success"
     showResponse (Error message) = hPrint stderr message
 
-listenUnixSocketAsync :: MainOptions -> CommandChan -> IO (Async ())
-listenUnixSocketAsync options commandChan = async $ listenUnixSocket options commandChan
+listenUnixSocketAsync :: MainOptions -> CommandHandler -> IO (Async ())
+listenUnixSocketAsync options commandHandler = async $ listenUnixSocket options commandHandler
 
-listenUnixSocket :: MainOptions -> CommandChan -> IO ()
-listenUnixSocket options commandChan = do
+listenUnixSocket :: MainOptions -> CommandHandler -> IO ()
+listenUnixSocket options commandHandler = do
   socketPath <- ipcSocketAddress options
   hPutStrLn stderr $ "Creating control socket at " <> socketPath
   socketExists <- doesFileExist socketPath
@@ -111,14 +109,12 @@ listenUnixSocket options commandChan = do
       (decodeResult, leftovers) <- runStateT decode producer
       response <- maybe (errorResponse "Empty stream") (either handleError (handleCommand leftovers)) decodeResult
       runEffect (encode response >-> consumer)
-    handleCommand :: Producer ByteString IO () -> Command -> IO SocketResponse
+    handleCommand :: Producer ByteString IO () -> Command -> IO CommandResult
     --handleCommand _ Block = error "TODO" -- addBlock $ handleBlockStream leftovers
-    handleCommand _ command = do
-      atomically $ writeTChan commandChan command
-      return Success
-    handleError :: DecodingError -> IO SocketResponse
+    handleCommand _ command = commandHandler command
+    handleError :: DecodingError -> IO CommandResult
     handleError = return . Error . pack . show
-    errorResponse :: Text -> IO SocketResponse
+    errorResponse :: Text -> IO CommandResult
     errorResponse message = return $ Error message
 
 handleBlockStream :: Producer ByteString IO () -> PushBlock

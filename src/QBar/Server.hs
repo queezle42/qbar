@@ -16,8 +16,6 @@ import Control.Monad (forever, when, unless, forM_)
 import Control.Concurrent.Async (async, link)
 import Control.Concurrent.Event as Event
 import Control.Concurrent.MVar (MVar, newMVar, modifyMVar, modifyMVar_)
-import Control.Concurrent.STM (atomically)
-import Control.Concurrent.STM.TChan (readTChan)
 import Control.Exception (throw)
 import Data.Aeson (encode, decode, ToJSON, toJSON, object, (.=))
 import Data.ByteString.Lazy (hPut)
@@ -26,7 +24,6 @@ import qualified Data.ByteString.Lazy as BS
 import qualified Data.ByteString.Lazy.Char8 as C8
 import Data.Maybe (fromMaybe)
 import qualified Data.Text.Lazy as T
-import qualified Data.Text.Lazy.IO as TIO
 import Pipes
 import Pipes.Concurrent (Input, spawn, latest, toOutput, fromInput)
 import qualified Pipes.Prelude as PP
@@ -132,31 +129,18 @@ runBarServer defaultBarConfig options = runBarHost barServer (swayBarInput optio
       -- MVar that holds the current theme, linked to the input from the above mailbox
       (themedBlockProducerMVar :: MVar (Producer [ThemedBlockOutput] IO (), Bool)) <- liftIO $ newMVar $ throw $ userError "Unexpected behavior: Default theme not set"
 
+      let setTheme' = setTheme renderEvent input themedBlockProducerMVar
+
+      -- Set default theme
+      liftIO $ setTheme' defaultTheme
 
       -- Create control socket
-      commandChan <- liftIO createCommandChan
-      controlSocketAsync <- liftIO $ listenUnixSocketAsync options commandChan
+      controlSocketAsync <- liftIO $ listenUnixSocketAsync options (commandHandler setTheme')
       liftIO $ link controlSocketAsync
 
-      -- Handle control socket messages
-      socketUpdateAsync <- liftIO $ async $ forever $ do
-        command <- atomically $ readTChan commandChan
-        case command of
-          SetTheme name -> do
-            let result = findTheme name
-            case result of
-              Left err -> TIO.hPutStrLn stderr err
-              Right theme -> do
-                setTheme input themedBlockProducerMVar theme
-                Event.signal renderEvent
-      liftIO $ link socketUpdateAsync
 
-      liftIO $ do
-        -- Set default theme
-        setTheme input themedBlockProducerMVar defaultTheme
-
-        -- Run render loop
-        liftIO $ link =<< async (renderLoop renderEvent themedBlockProducerMVar)
+      -- Run render loop
+      liftIO $ link =<< async (renderLoop renderEvent themedBlockProducerMVar)
 
       -- Return a consumer that accepts BlockOutputs from the bar host, moves them to the mailbox and signals the renderer to update the bar.
       signalPipe renderEvent >-> toOutput output
@@ -186,11 +170,23 @@ runBarServer defaultBarConfig options = runBarHost barServer (swayBarInput optio
             else Event.wait renderEvent
           themeAnimator'
 
-    setTheme :: Input [BlockOutput] -> MVar (Producer [ThemedBlockOutput] IO (), Bool) -> Theme -> IO ()
-    setTheme blockOutputInput themedBlockProducerMVar (StaticTheme theme) =
-      modifyMVar_ themedBlockProducerMVar (\_ -> return (fromInput blockOutputInput >-> PP.map theme, False))
-    setTheme blockOutputInput themedBlockProducerMVar (AnimatedTheme theme) =
-      modifyMVar_ themedBlockProducerMVar (\_ -> return (fromInput blockOutputInput >-> theme, True))
+    setTheme :: Event.Event -> Input [BlockOutput] -> MVar (Producer [ThemedBlockOutput] IO (), Bool) -> Theme -> IO ()
+    setTheme renderEvent blockOutputInput themedBlockProducerMVar theme = do
+      modifyMVar_ themedBlockProducerMVar (\_ -> return (mkThemedBlockProducer theme))
+      Event.signal renderEvent
+      where
+        mkThemedBlockProducer :: Theme -> (Producer [ThemedBlockOutput] IO (), Bool)
+        mkThemedBlockProducer (StaticTheme themeFn) = (fromInput blockOutputInput >-> PP.map themeFn, False)
+        mkThemedBlockProducer (AnimatedTheme themePipe) = (fromInput blockOutputInput >-> themePipe, True)
+
+    commandHandler :: (Theme -> IO ()) -> Command -> IO CommandResult
+    commandHandler setTheme' (SetTheme name) =
+      case findTheme name of
+        Left err -> return $ Error err
+        Right theme -> do
+          setTheme' theme
+          return Success
+
 
 
 -- |Entry point.
