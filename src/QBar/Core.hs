@@ -56,15 +56,16 @@ type Block = Producer BlockState BarIO
 type PushBlock = Block PushMode
 -- |Block that generates an update on 'yield'. Should only be pulled when an update is required.
 type PullBlock = Block PullMode
--- |Cached block. Always 'yield's the latest update, so it should only be pulled when the bar is rendered.
-type CachedBlock = Block CachedMode
 
-class IsCachableBlock a where
-  toCachedBlock :: a -> CachedBlock
+-- |Cache that holds multiple BlockStates. When iterated it always immediately 'yield's the latest update, so it should only be pulled when a bar update has been requested.
+type BlockCache = Producer BlockState BarIO CachedMode
 
-instance IsCachableBlock PushBlock where
+class IsCachable a where
+  toCachedBlock :: a -> BlockCache
+
+instance IsCachable PushBlock where
   toCachedBlock = cachePushBlock
-instance IsCachableBlock CachedBlock where
+instance IsCachable BlockCache where
   toCachedBlock = id
 
 class IsBlockMode a where
@@ -73,15 +74,16 @@ instance IsBlockMode PushMode where
   exitBlock = return PushMode
 instance IsBlockMode PullMode where
   exitBlock = return PullMode
-instance IsBlockMode CachedMode where
-  exitBlock = return CachedMode
+
+exitCache :: BlockCache
+exitCache = return CachedMode
 
 
 type BarIO = SafeT (ReaderT Bar IO)
 
 data Bar = Bar {
   requestBarUpdate :: IO (),
-  newBlockChan :: TChan CachedBlock
+  newBlockChan :: TChan BlockCache
 }
 
 
@@ -160,12 +162,12 @@ autoPadding = autoPadding' 0 0
     padShortText :: Int64 -> BlockOutput -> BlockOutput
     padShortText len = over (shortText._Just) $ \s -> padString (len - printedLength s) <> s
 
-cacheFromInput :: Input BlockState -> CachedBlock
+cacheFromInput :: Input BlockState -> BlockCache
 cacheFromInput input = CachedMode <$ fromInput input
 
 -- | Create a shared interval. Takes a BarUpdateChannel to signal bar updates and an interval (in seconds).Data.Maybe
 -- Returns an IO action that can be used to attach blocks to the shared interval and an async that contains a reference to the scheduler thread.
-sharedInterval :: Int -> BarIO (PullBlock -> CachedBlock)
+sharedInterval :: Int -> BarIO (PullBlock -> BlockCache)
 sharedInterval seconds = do
   clientsMVar <- liftIO $ newMVar ([] :: [(MVar PullBlock, Output BlockState)])
 
@@ -219,7 +221,7 @@ sharedInterval seconds = do
           void $ runClient (blockMVar, output)
           -- Notify bar about changed block state, this is usually done by the shared interval handler
           updateBar
-    addClient :: Event.Event -> MVar [(MVar PullBlock, Output BlockState)] -> PullBlock -> CachedBlock
+    addClient :: Event.Event -> MVar [(MVar PullBlock, Output BlockState)] -> PullBlock -> BlockCache
     addClient startEvent clientsMVar blockProducer = do
       -- Spawn the mailbox that preserves the latest block
       (output, input) <- liftIO $ spawn $ latest Nothing
@@ -290,7 +292,7 @@ persistentBlockScript path = catchP startScriptProcess handleError
       updateBlock $ mkBlockOutput . normalText $ line
       lift updateBar
 
-addBlock :: IsCachableBlock a => a -> BarIO ()
+addBlock :: IsCachable a => a -> BarIO ()
 addBlock block = do
   newBlockChan' <- newBlockChan <$> askBar
   liftIO $ atomically $ writeTChan newBlockChan' $ toCachedBlock block
@@ -306,10 +308,10 @@ barAsync action = do
   bar <- askBar
   liftIO $ async $ runBarIO bar action
 
-cachePushBlock :: PushBlock -> CachedBlock
-cachePushBlock pushBlock = lift (next pushBlock) >>= either (const exitBlock) withInitialBlock
+cachePushBlock :: PushBlock -> BlockCache
+cachePushBlock pushBlock = lift (next pushBlock) >>= either (const exitCache) withInitialBlock
   where
-    withInitialBlock :: (BlockState, PushBlock) -> CachedBlock
+    withInitialBlock :: (BlockState, PushBlock) -> BlockCache
     withInitialBlock (initialBlockOutput, pushBlock') = do
       (output, input, seal) <- liftIO $ spawn' $ latest $ initialBlockOutput
       -- The async could be used to stop the block later, but for now we are just linking it to catch exceptions
@@ -335,4 +337,4 @@ cachePushBlock pushBlock = lift (next pushBlock) >>= either (const exitBlock) wi
       eitherMaybeValue <- lift $ next p
       case eitherMaybeValue of
         Right (Just value, newP) -> yield (Just value) >> terminateOnMaybe newP
-        _ -> exitBlock
+        _ -> exitCache

@@ -22,7 +22,7 @@ import System.Posix.Signals
 
 data HostHandle = HostHandle {
   barUpdateEvent :: BarUpdateEvent,
-  newBlockChan :: TChan CachedBlock,
+  newBlockChan :: TChan BlockCache,
   eventHandlerListIORef :: IORef [(T.Text, BlockEventHandler)]
 }
 
@@ -53,7 +53,7 @@ eventDispatcher bar eventHandlerListIORef = eventDispatcher'
 runBlocks :: Bar -> HostHandle -> Producer [BlockOutput] IO ()
 runBlocks bar HostHandle{barUpdateEvent, newBlockChan, eventHandlerListIORef} = runBlocks' []
   where
-    runBlocks' :: [CachedBlock] -> Producer [BlockOutput] IO ()
+    runBlocks' :: [BlockCache] -> Producer [BlockOutput] IO ()
     runBlocks' blocks = do
       liftIO $ do
         -- Wait for an update request
@@ -79,17 +79,17 @@ runBlocks bar HostHandle{barUpdateEvent, newBlockChan, eventHandlerListIORef} = 
       -- Loop
       runBlocks' blocks''
 
-    addNewBlocks :: [CachedBlock] -> BarIO [CachedBlock]
+    addNewBlocks :: [BlockCache] -> BarIO [BlockCache]
     addNewBlocks blocks = do
       maybeNewBlock <- liftIO $ atomically $ tryReadTChan newBlockChan
       case maybeNewBlock of
         Nothing -> return blocks
         Just newBlock -> addNewBlocks (newBlock:blocks)
 
-    getBlockStates :: [CachedBlock] -> BarIO ([BlockState], [CachedBlock])
+    getBlockStates :: [BlockCache] -> BarIO ([BlockState], [BlockCache])
     getBlockStates blocks = unzip . catMaybes <$> mapM getBlockState blocks
 
-    getBlockState :: CachedBlock -> BarIO (Maybe (BlockState, CachedBlock))
+    getBlockState :: BlockCache -> BarIO (Maybe (BlockState, BlockCache))
     getBlockState producer = do
       next' <- next producer
       return $ case next' of
