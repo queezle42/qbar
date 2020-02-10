@@ -58,7 +58,7 @@ type PushBlock = Block PushMode
 type PullBlock = Block PullMode
 
 -- |Cache that holds multiple BlockStates. When iterated it always immediately 'yield's the latest update, so it should only be pulled when a bar update has been requested.
-type BlockCache = Producer BlockState BarIO CachedMode
+type BlockCache = Producer [BlockState] BarIO CachedMode
 
 class IsCachable a where
   toCachedBlock :: a -> BlockCache
@@ -163,7 +163,12 @@ autoPadding = autoPadding' 0 0
     padShortText len = over (shortText._Just) $ \s -> padString (len - printedLength s) <> s
 
 cacheFromInput :: Input BlockState -> BlockCache
-cacheFromInput input = CachedMode <$ fromInput input
+cacheFromInput input = do
+  result <- liftIO $ atomically $ recv input
+  case result of
+    Nothing -> exitCache
+    Just value -> yield [value] >> cacheFromInput input
+
 
 -- | Create a shared interval. Takes a BarUpdateChannel to signal bar updates and an interval (in seconds).Data.Maybe
 -- Returns an IO action that can be used to attach blocks to the shared interval and an async that contains a reference to the scheduler thread.
@@ -313,11 +318,11 @@ cachePushBlock pushBlock = lift (next pushBlock) >>= either (const exitCache) wi
   where
     withInitialBlock :: (BlockState, PushBlock) -> BlockCache
     withInitialBlock (initialBlockOutput, pushBlock') = do
-      (output, input, seal) <- liftIO $ spawn' $ latest $ initialBlockOutput
+      (output, input, seal) <- liftIO $ spawn' $ latest initialBlockOutput
       -- The async could be used to stop the block later, but for now we are just linking it to catch exceptions
       task <- lift $ barAsync (sendProducerToMailbox output seal pushBlock')
       liftIO $ link task
-      terminateOnMaybe $ fromInput input
+      cacheFromInput input
     sendProducerToMailbox :: Output BlockState -> STM () -> PushBlock -> BarIO ()
     sendProducerToMailbox output seal pushBlock' = do
       -- Send push block output to mailbox until it terminates
@@ -330,11 +335,5 @@ cachePushBlock pushBlock = lift (next pushBlock) >>= either (const exitCache) wi
     sendOutputToMailbox output blockOutput = do
       -- The void is discarding the boolean result that indicates if the mailbox is sealed
       -- This is ok because a cached block is never sealed from the receiving side
-      liftIO $ atomically $ void $ send output $ blockOutput
+      liftIO $ atomically $ void $ send output blockOutput
       lift updateBar
-    terminateOnMaybe :: Producer BlockState BarIO () -> Producer BlockState BarIO CachedMode
-    terminateOnMaybe p = do
-      eitherMaybeValue <- lift $ next p
-      case eitherMaybeValue of
-        Right (Just value, newP) -> yield (Just value) >> terminateOnMaybe newP
-        _ -> exitCache

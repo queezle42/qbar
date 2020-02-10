@@ -87,14 +87,16 @@ runBlocks bar HostHandle{barUpdateEvent, newBlockChan, eventHandlerListIORef} = 
         Just newBlock -> addNewBlocks (newBlock:blocks)
 
     getBlockStates :: [BlockCache] -> BarIO ([BlockState], [BlockCache])
-    getBlockStates blocks = unzip . catMaybes <$> mapM getBlockState blocks
-
-    getBlockState :: BlockCache -> BarIO (Maybe (BlockState, BlockCache))
-    getBlockState producer = do
-      next' <- next producer
-      return $ case next' of
-        Left _ -> Nothing
-        Right (blockState, newProducer) -> Just (blockState, newProducer)
+    getBlockStates caches = do
+      (blockStates, newCaches) <- unzip . catMaybes <$> mapM readCache caches
+      return (concat blockStates, newCaches)
+      where
+        readCache :: BlockCache -> BarIO (Maybe ([BlockState], BlockCache))
+        readCache producer = do
+          next' <- next producer
+          return $ case next' of
+            Left _ -> Nothing
+            Right (blockStates, newProducer) -> Just (blockStates, newProducer)
 
     updateEventHandlers :: [BlockState] -> IO ()
     updateEventHandlers blockStates =
