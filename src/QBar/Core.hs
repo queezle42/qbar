@@ -105,14 +105,27 @@ instance (MonadBarIO m, Monoid a) => MonadBarIO (WriterT a m) where
 askBar :: MonadBarIO m => m Bar
 askBar = liftBarIO $ lift ask
 
+
+class (MonadBarIO m) => MonadBlock m where
+  liftBlock :: Block a -> m a
+instance MonadBlock Block where
+  liftBlock = id
+instance (MonadBlock m) => MonadBlock (StateT a m) where
+  liftBlock = lift . liftBlock
+instance (MonadBlock m) => MonadBlock (ReaderT a m) where
+  liftBlock = lift . liftBlock
+instance (MonadBlock m, Monoid a) => MonadBlock (WriterT a m) where
+  liftBlock = lift . liftBlock
+
+updateBlock :: MonadBlock m => BlockOutput -> m ()
+updateBlock blockOutput = liftBlock . yield $ Just (blockOutput, Nothing)
+
+updateBlock' :: MonadBlock m => BlockEventHandler -> BlockOutput -> m ()
+updateBlock' blockEventHandler blockOutput = liftBlock . yield $ Just (blockOutput, Just blockEventHandler)
+
+
 mkBlockState :: BlockOutput -> BlockState
 mkBlockState blockOutput = Just (blockOutput, Nothing)
-
-updateBlock :: BlockOutput -> Block ()
-updateBlock blockOutput = yield $ Just (blockOutput, Nothing)
-
-updateBlock' :: BlockEventHandler -> BlockOutput -> Block ()
-updateBlock' blockEventHandler blockOutput = yield $ Just (blockOutput, Just blockEventHandler)
 
 updateEventHandler :: BlockEventHandler -> BlockState -> BlockState
 updateEventHandler _ Nothing = Nothing
