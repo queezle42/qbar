@@ -89,7 +89,7 @@ newtype BarUpdateChannel = BarUpdateChannel (IO ())
 type BarUpdateEvent = Event.Event
 
 
-class (Monad m) => MonadBarIO m where
+class (MonadIO m) => MonadBarIO m where
   liftBarIO :: BarIO a -> m a
 instance MonadBarIO BarIO where
   liftBarIO = id
