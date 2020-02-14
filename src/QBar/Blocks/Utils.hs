@@ -14,6 +14,11 @@ formatFloatN = formatFloatN' 0
 formatFloatN' :: RealFloat a => Int -> Int -> a -> T.Text
 formatFloatN' padWithZeros decimalPlaces f = T.justifyRight (fromIntegral padWithZeros) '0' . T.pack $ showFFloat (Just decimalPlaces) f ""
 
+ensure :: (a -> Bool) -> a -> Maybe a
+ensure f a
+  | f a = Just a
+  | otherwise = Nothing
+
 tryMaybe :: IO a -> IO (Maybe a)
 tryMaybe a = tryMaybe' (Just <$> a)
 

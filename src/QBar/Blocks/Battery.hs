@@ -158,8 +158,8 @@ batteryIsDischarging = any (singleBatteryIsDischarging . _status)
 batteryEstimate :: [BatteryState] -> Maybe Int
 batteryEstimate batteryStates
   | batteryPowerNow == 0 = Nothing
-  | isCharging, not isDischarging = Just $ div ((batteryEnergyFull - batteryEnergyNow) * 3600) batteryPowerNow
-  | isDischarging, not isCharging = Just $ div (batteryEnergyNow * 3600) batteryPowerNow
+  | isCharging, not isDischarging = ensure (>0) batteryEstimateCharging
+  | isDischarging, not isCharging = ensure (>0) batteryEstimateDischarging
   | otherwise = Nothing
   where
     isCharging :: Bool
@@ -176,3 +176,9 @@ batteryEstimate batteryStates
 
     batteryEnergyFull :: Int
     batteryEnergyFull = sum . map _energyFull $ batteryStates
+
+    batteryEstimateCharging :: Int
+    batteryEstimateCharging = div ((batteryEnergyFull - batteryEnergyNow) * 3600) batteryPowerNow
+
+    batteryEstimateDischarging :: Int
+    batteryEstimateDischarging = div (batteryEnergyNow * 3600) batteryPowerNow
