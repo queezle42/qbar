@@ -1,8 +1,8 @@
-module QBar.Blocks (
-  module QBar.Blocks.Battery,
-  module QBar.Blocks.Date
-) where
+module QBar.Blocks
+  ( QBar.Blocks.Battery.batteryBlock,
+    QBar.Blocks.Date.dateBlock,
+  )
+where
 
-
-import QBar.Blocks.Battery
-import QBar.Blocks.Date
+import qualified QBar.Blocks.Battery
+import qualified QBar.Blocks.Date

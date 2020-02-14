@@ -4,7 +4,8 @@
 module QBar.Blocks.Battery where
 
 
-import QBar.Core hiding (name)
+import QBar.Core
+import QBar.Blocks.Utils
 import QBar.BlockOutput
 import Pipes
 
@@ -12,16 +13,10 @@ import qualified Data.Text.Lazy as T
 import qualified Data.Text.Lazy.IO as TIO
 
 import System.Directory
-import Control.Exception (catch, IOException)
 import Data.Maybe
 import Text.Read (readMaybe)
-import Numeric (showFFloat)
 
 import Control.Lens
-
-
-formatFloatN :: RealFloat a => Int -> a -> T.Text
-formatFloatN n f = T.pack $ showFFloat (Just n) f ""
 
 
 data BatteryStatus = BatteryCharging | BatteryDischarging | BatteryOther
@@ -34,10 +29,6 @@ data BatteryState = BatteryState
   , _energyNow :: Int
   , _energyFull :: Int
 } deriving (Show)
-
-
-tryMaybe :: IO a -> IO (Maybe a)
-tryMaybe a = catch (Just <$> a) (\ (_ :: IOException) -> return Nothing)
 
 
 getBatteryState :: FilePath -> IO (Maybe BatteryState)
