@@ -2,6 +2,7 @@
 
 module QBar.Cli where
 
+import QBar.Blocks
 import QBar.Blocks.Pipe
 import QBar.ControlSocket
 import QBar.Core
@@ -55,9 +56,14 @@ pipeBlockParser = do
 
 barConfigurationParser :: Parser (BarIO ())
 barConfigurationParser = do
-  blocks <- many $ hsubparser (
-      command "default" (info (pure defaultBarConfig) (progDesc "Load default set of blocks."))
-    )
+  blocks <- many blockParser
   pure $ case blocks of
+    -- Load default config if no blocks are selected on the command line
     [] -> defaultBarConfig
     l -> sequence_ l
+
+blockParser :: Parser (BarIO ())
+blockParser = hsubparser (
+    command "default" (info (pure defaultBarConfig) (progDesc "Load default set of blocks.")) <>
+    command "date" (info (pure $ addBlock dateBlock) (progDesc "Load the date and time block."))
+  )
