@@ -51,7 +51,7 @@ class (ToJSON (Up s), FromJSON (Up s), ToJSON (Down s), FromJSON (Down s)) => Is
     sock <- liftIO $ connectIpcSocket options
     runEffect (encode (StartStream $ toStreamType s) >-> toSocket sock)
     let up = forever (await >>= encode) >-> verbosePrintP >-> toSocket sock
-    let down = decodeStreamSafe options (fromSocket sock 4096)
+    let down = decodeStreamSafe options (fromSocket sock 4096 >-> verbosePrintP)
     return (up, down)
     where
       verbosePrintP :: Pipe ByteString ByteString IO ()
