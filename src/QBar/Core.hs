@@ -134,6 +134,9 @@ updateBlock' blockEventHandler blockOutput = liftBlock . yield $ Just (blockOutp
 mkBlockState :: BlockOutput -> BlockState
 mkBlockState blockOutput = Just (blockOutput, Nothing)
 
+mkBlockState' :: Text -> BlockEventHandler -> BlockOutput -> BlockState
+mkBlockState' newBlockName blockEventHandler blockOutput = Just (blockOutput {_blockName = Just newBlockName}, Just blockEventHandler)
+
 updateEventHandler :: BlockEventHandler -> BlockState -> BlockState
 updateEventHandler _ Nothing = Nothing
 updateEventHandler eventHandler (Just (blockOutput, _)) = Just (blockOutput, Just eventHandler)
