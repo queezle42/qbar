@@ -33,6 +33,12 @@ import System.Process.Typed (Process, shell, setStdin, setStdout,
   getStdout, closed, createPipe, readProcessStdout, startProcess, stopProcess)
 
 
+data MainOptions = MainOptions {
+  verbose :: Bool,
+  indicator :: Bool,
+  socketLocation :: Maybe T.Text
+}
+
 data BlockEvent = Click {
   name :: T.Text,
   button :: Int

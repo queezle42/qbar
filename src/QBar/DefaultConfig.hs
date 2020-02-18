@@ -11,8 +11,8 @@ import Control.Lens
 blockLocation :: String -> FilePath
 blockLocation name = "~/.config/qbar/blocks/" <> name
 
-generateDefaultBarConfig :: BarIO ()
-generateDefaultBarConfig = do
+defaultBarConfig :: BarIO ()
+defaultBarConfig = do
   systemInfoInterval <- sharedInterval 10
 
   let todo = systemInfoInterval (blockScript $ blockLocation "todo")

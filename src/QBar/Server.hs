@@ -5,7 +5,6 @@ module QBar.Server where
 
 import QBar.BlockOutput
 import QBar.Core
-import QBar.Cli
 import QBar.ControlSocket
 import QBar.Host
 import QBar.Pango
@@ -117,8 +116,8 @@ swayBarOutput options@MainOptions{indicator} = do
       pangoBlockName = _blockName
     }
 
-runBarServer :: MainOptions -> BarIO () -> IO ()
-runBarServer options = runBarHost barServer
+runBarServer :: BarIO () -> MainOptions -> IO ()
+runBarServer loadBlocks options = runBarHost barServer loadBlocks
   where
     barServer :: BarIO (Consumer [BlockOutput] IO (), Producer BlockEvent IO ())
     barServer = do
@@ -190,12 +189,3 @@ runBarServer options = runBarHost barServer
         Right theme -> do
           setTheme' theme
           return Success
-
-
--- |Entry point.
-runQBar :: BarIO () -> MainOptions -> IO ()
-runQBar barConfiguration options@MainOptions{barCommand} = runCommand barCommand
-  where
-    runCommand BarServerCommand = runBarServer options barConfiguration
-    runCommand ConnectSocket = sendBlockStream options barConfiguration
-    runCommand (SetThemeCommand themeName) = sendIpc options $ SetTheme themeName

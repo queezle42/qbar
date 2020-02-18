@@ -9,7 +9,6 @@
 module QBar.ControlSocket where
 
 import QBar.BlockOutput
-import QBar.Cli (MainOptions(..))
 import QBar.Core
 import QBar.Host
 import QBar.Util
@@ -27,8 +26,7 @@ import System.IO
 import Data.Either (either)
 import Data.Maybe (maybe)
 import Data.Text.Lazy (Text, pack)
-import qualified Data.Text as T
-import qualified Data.Text.Lazy as TL
+import qualified Data.Text.Lazy as T
 import Network.Socket
 import Pipes
 import Pipes.Concurrent as PC (Output, spawn', unbounded, fromInput, send, atomically)
@@ -110,12 +108,15 @@ instance IsStream BlockStream where
   type Down BlockStream = BlockEvent
   toStreamType = BlockStreamType
   streamHandler _ = do
-    (cache, updateC, seal) <- newCache'
+    (cache, updateCacheC, sealCache) <- newCache'
     (eventOutput, eventInput, eventSeal) <- liftIO $ spawn' unbounded
     bar <- askBar
     addBlock cache
     prefix <- liftIO $ (<> "_") <$> randomIdentifier
-    return (updateBarP bar >-> attachHandlerP eventOutput prefix >-> updateC, fromInput eventInput, seal >> atomically eventSeal)
+    let blockConsumer = updateBarP bar >-> attachHandlerP eventOutput prefix >-> updateCacheC
+    let eventProducer = fromInput eventInput
+    let seal = sealCache >> atomically eventSeal >> updateBar' bar
+    return (blockConsumer, eventProducer, seal)
     where
       attachHandlerP :: Output BlockEvent -> Text -> Pipe [BlockOutput] [BlockState] IO ()
       attachHandlerP eventOutput prefix = attachHandlerP'
@@ -145,7 +146,7 @@ instance IsStream BlockStream where
 
 data Request = Command Command | StartStream StreamType
 
-data Command = SetTheme TL.Text
+data Command = SetTheme T.Text
   deriving Show
 
 data CommandResult = Success | Error Text
@@ -189,8 +190,8 @@ $(deriveJSON defaultOptions ''CommandResult)
 $(deriveJSON defaultOptions ''StreamType)
 $(deriveJSON defaultOptions ''BlockStream)
 
-sendIpc :: MainOptions -> Command -> IO ()
-sendIpc options@MainOptions{verbose} command = do
+sendIpc :: Command -> MainOptions -> IO ()
+sendIpc command options@MainOptions{verbose} = do
   let request = Command command
   sock <- connectIpcSocket options
   runEffect $ encode request >-> toSocket sock
@@ -206,8 +207,8 @@ sendIpc options@MainOptions{verbose} command = do
     showResponse Success = when verbose $ hPutStrLn stderr "Success"
     showResponse (Error message) = hPrint stderr message
 
-sendBlockStream :: MainOptions -> BarIO () -> IO ()
-sendBlockStream = runBarHost . streamClient BlockStream
+sendBlockStream :: BarIO () -> MainOptions -> IO ()
+sendBlockStream loadBlocks options = runBarHost (streamClient BlockStream options) loadBlocks
 
 
 listenUnixSocketAsync :: MainOptions -> Bar -> CommandHandler -> IO (Async ())

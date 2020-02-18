@@ -2,47 +2,55 @@
 
 module QBar.Cli where
 
+import QBar.ControlSocket
+import QBar.Core
+import QBar.DefaultConfig
+import QBar.Server
 import QBar.Theme
 
-import qualified Data.Text as T
-import qualified Data.Text.Lazy as TL
+import Control.Monad (join, sequence_)
+import qualified Data.Text.Lazy as T
 import Options.Applicative
 
-data BarCommand = BarServerCommand | SetThemeCommand Text | ConnectSocket
+-- |Entry point.
+runQBar :: IO ()
+runQBar = join parseMain
 
-barCommandParser :: Parser BarCommand
-barCommandParser = hsubparser (
-    command "server" (info (pure BarServerCommand) (progDesc "Start a new qbar server. Should be called by swaybar, i3bar or or another i3bar-protocol compatible host process.")) <>
-    command "connect" (info (pure ConnectSocket) (progDesc "Run blocks on this process but display them on the qbar server.")) <>
-    command "theme" (info themeCommandParser (progDesc "Change the theme of the running qbar server.")) <>
-    command "default" (info (pure $ SetThemeCommand "default") (progDesc "Shortcut for 'qbar theme default'.")) <>
-    command "rainbow" (info (pure $ SetThemeCommand "rainbow") (progDesc "Shortcut for 'qbar theme rainbow'."))
-  )
+parseMain :: IO (IO ())
+parseMain = customExecParser parserPrefs parser
+  where
+    parser :: ParserInfo (IO ())
+    parser = info (mainParser <**> helper)
+      (fullDesc <> header "qbar - queezles {i3,sway}bar infrastructure")
 
-themeCommandParser :: Parser BarCommand
-themeCommandParser = SetThemeCommand <$> strArgument (metavar "THEME" <> completeWith (map TL.unpack themeNames))
+    parserPrefs :: ParserPrefs
+    parserPrefs = prefs showHelpOnEmpty
 
-data MainOptions = MainOptions {
-  verbose :: Bool,
-  indicator :: Bool,
-  socketLocation :: Maybe T.Text,
-  barCommand :: BarCommand
-}
-
-mainOptionsParser :: Parser MainOptions
-mainOptionsParser = do
+mainParser :: Parser (IO ())
+mainParser = do
   verbose <- switch $ long "verbose" <> short 'v' <> help "Print more diagnostic output to stderr (including a copy of every bar update)."
   indicator <- switch $ long "indicator" <> short 'i' <> help "Show render indicator."
   socketLocation <- optional $ strOption $ long "socket" <> short 's' <> metavar "SOCKET" <> help "Control socket location. By default determined by WAYLAND_SOCKET location."
   barCommand <- barCommandParser
-  return MainOptions {verbose, indicator, socketLocation, barCommand}
+  return (barCommand MainOptions {verbose, indicator, socketLocation})
 
-parser :: ParserInfo MainOptions
-parser = info (mainOptionsParser <**> helper)
-  (fullDesc <> header "qbar - queezles {i3,sway}bar infrastructure")
+barCommandParser :: Parser (MainOptions -> IO ())
+barCommandParser = hsubparser (
+    command "server" (info (runBarServer <$> barConfigurationParser) (progDesc "Start a new qbar server. Should be called by swaybar, i3bar or or another i3bar-protocol compatible host process.")) <>
+    command "connect" (info (sendBlockStream <$> barConfigurationParser) (progDesc "Run blocks on this process but display them on the qbar server.")) <>
+    command "theme" (info themeCommandParser (progDesc "Change the theme of the running qbar server.")) <>
+    command "default" (info (pure $ sendIpc . SetTheme $ "default") (progDesc "Shortcut for 'qbar theme default'.")) <>
+    command "rainbow" (info (pure $ sendIpc . SetTheme $ "rainbow") (progDesc "Shortcut for 'qbar theme rainbow'."))
+  )
 
-parserPrefs :: ParserPrefs
-parserPrefs = prefs showHelpOnEmpty
+themeCommandParser :: Parser (MainOptions -> IO ())
+themeCommandParser = sendIpc . SetTheme <$> strArgument (metavar "THEME" <> completeWith (map T.unpack themeNames))
 
-parseOptions :: IO MainOptions
-parseOptions = customExecParser parserPrefs parser
+barConfigurationParser :: Parser (BarIO ())
+barConfigurationParser = do
+  blocks <- many $ hsubparser (
+      command "default" (info (pure defaultBarConfig) (progDesc "Load default set of blocks."))
+    )
+  pure $ case blocks of
+    [] -> defaultBarConfig
+    l -> sequence_ l
