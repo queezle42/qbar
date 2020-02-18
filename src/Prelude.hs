@@ -2,20 +2,24 @@
 
 module Prelude
   ( module BasePrelude,
-    head,
+    ByteString.ByteString,
+    Text.Text,
+    Maybe.listToMaybe,
     error,
     errorWithoutStackTrace,
-    undefined,
-    Text.Text,
-    ByteString.ByteString,
+    forever,
+    head,
+    intercalate,
     trace,
     traceId,
     traceShow,
     traceShowId,
     traceM,
     traceShowM,
-    Maybe.listToMaybe,
-    intercalate
+    undefined,
+    unless,
+    void,
+    when
   )
 where
 
@@ -26,6 +30,7 @@ import BasePrelude hiding
     undefined,
   )
 import qualified BasePrelude as P
+import Control.Monad (forever, void, when, unless)
 import qualified Data.ByteString as ByteString
 import qualified Data.Maybe as Maybe
 import qualified Data.Text.Lazy as Text

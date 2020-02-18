@@ -11,7 +11,7 @@ import QBar.Pango
 import QBar.Theme
 import QBar.Util
 
-import Control.Monad (when, unless, forM_)
+import Control.Monad (forM_)
 import Control.Concurrent.Async (async, link)
 import Control.Concurrent.Event as Event
 import Control.Concurrent.MVar (MVar, newMVar, modifyMVar, modifyMVar_)

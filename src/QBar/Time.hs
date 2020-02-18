@@ -1,7 +1,6 @@
 module QBar.Time (sleepUntil, nextMinute) where
 
 import Control.Concurrent (threadDelay)
-import Control.Monad (when)
 import Data.Time.Clock (UTCTime, getCurrentTime, diffUTCTime, utctDayTime)
 
 sleepUntil :: UTCTime -> IO ()

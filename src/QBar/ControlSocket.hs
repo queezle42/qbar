@@ -14,7 +14,6 @@ import QBar.Host
 import QBar.Util
 
 import Control.Exception (SomeException, handle)
-import Control.Monad (forever, void, when)
 import Control.Concurrent (forkFinally)
 import Control.Concurrent.Async
 import Data.Aeson (FromJSON, ToJSON)

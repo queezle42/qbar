@@ -12,7 +12,6 @@ import Control.Concurrent.MVar
 import Control.Concurrent.STM.TChan (TChan, writeTChan)
 import Control.Exception (IOException)
 import Control.Lens
-import Control.Monad (forever, when)
 import Control.Monad.Reader (ReaderT, runReaderT, ask)
 import Control.Monad.State (StateT)
 import Control.Monad.Writer (WriterT)

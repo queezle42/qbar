@@ -11,7 +11,6 @@ import Control.Concurrent.Event as Event
 import Control.Concurrent.STM.TChan (TChan, newTChanIO, tryReadTChan)
 import Control.Exception (SomeException, catch)
 import Control.Lens hiding (each, (.=))
-import Control.Monad (when)
 import Control.Monad.STM (atomically)
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import Data.Maybe (catMaybes, mapMaybe)
