@@ -12,7 +12,7 @@ import Control.Concurrent.MVar
 import Control.Concurrent.STM.TChan (TChan, writeTChan)
 import Control.Exception (IOException)
 import Control.Lens
-import Control.Monad (forever)
+import Control.Monad (forever, when)
 import Control.Monad.Reader (ReaderT, runReaderT, ask)
 import Control.Monad.State (StateT)
 import Control.Monad.Writer (WriterT)
@@ -137,6 +137,62 @@ updateEventHandler eventHandler (Just (blockOutput, _)) = Just (blockOutput, Jus
 runBarIO :: Bar -> BarIO r -> IO r
 runBarIO bar action = runReaderT (runSafeT action) bar
 
+
+newCache :: Producer [BlockState] IO () -> BlockCache
+newCache input = newCacheInternal =<< newCache''
+  where
+    newCacheInternal :: (BlockCache, [BlockState] -> IO Bool, IO ()) -> BlockCache
+    newCacheInternal (cache, update, seal) = do
+      liftIO $ link =<< async updateTask
+      cache
+      where
+        updateTask :: IO ()
+        updateTask = do
+          runEffect (input >-> forever (await >>= liftIO . update))
+          seal
+
+newCache' :: (MonadIO m) => m (BlockCache, Consumer [BlockState] IO (), IO ())
+newCache' = do
+  (cache, update, seal) <- newCache''
+  return (cache, cacheUpdateConsumer update, seal)
+  where
+    cacheUpdateConsumer :: ([BlockState] -> IO Bool) -> Consumer [BlockState] IO ()
+    cacheUpdateConsumer update = do
+      v <- await
+      result <- liftIO $ update v
+      when result $ cacheUpdateConsumer update
+
+newCache'' :: (MonadIO m) => m (BlockCache, [BlockState] -> IO Bool, IO ())
+newCache'' = do
+  store <- liftIO $ newMVar (Just [])
+  newCacheInternal store
+  where
+    newCacheInternal :: MonadIO m => MVar (Maybe [BlockState]) -> m (BlockCache, [BlockState] -> IO Bool, IO ())
+    newCacheInternal store = return (cache, update, seal)
+      where
+        update :: [BlockState] -> IO Bool
+        update value = modifyMVar store $ \old ->
+          return $ case old of
+            Nothing -> (Nothing, False)
+            Just _ -> (Just value, True)
+        seal :: IO ()
+        seal = void . swapMVar store $ Nothing
+        cache :: BlockCache
+        cache = do
+          v <- liftIO (readMVar store)
+          case v of
+            Nothing -> exitCache
+            Just value -> yield value >> cache
+
+
+cacheFromInput :: Input BlockState -> BlockCache
+cacheFromInput input = do
+  result <- liftIO $ atomically $ recv input
+  case result of
+    Nothing -> exitCache
+    Just value -> yield [value] >> cacheFromInput input
+
+
 modify :: (BlockOutput -> BlockOutput) -> Pipe BlockState BlockState BarIO r
 modify x = PP.map (over (_Just . _1) x)
 
@@ -161,13 +217,6 @@ autoPadding = autoPadding' 0 0
     padFullText len = over fullText $ \s -> padString (len - printedLength s) <> s
     padShortText :: Int64 -> BlockOutput -> BlockOutput
     padShortText len = over (shortText._Just) $ \s -> padString (len - printedLength s) <> s
-
-cacheFromInput :: Input BlockState -> BlockCache
-cacheFromInput input = do
-  result <- liftIO $ atomically $ recv input
-  case result of
-    Nothing -> exitCache
-    Just value -> yield [value] >> cacheFromInput input
 
 
 -- | Create a shared interval. Takes a BarUpdateChannel to signal bar updates and an interval (in seconds).Data.Maybe
@@ -330,6 +379,7 @@ cachePushBlock pushBlock = lift (next pushBlock) >>= either (const exitCache) wi
       -- Then clear the block and seal the mailbox
       liftIO $ atomically $ void $ send output Nothing
       updateBar
+      -- TODO: sealing does prevent a 'latest' mailbox from being read
       liftIO $ atomically seal
     sendOutputToMailbox :: Output BlockState -> BlockState -> Effect BarIO ()
     sendOutputToMailbox output blockOutput = do

@@ -39,6 +39,7 @@ dependencies:
 - pipes-network
 - pipes-parse
 - pipes-safe
+- random
 - stm
 - text
 - time
@@ -49,6 +50,7 @@ dependencies:
 default-extensions:
 - OverloadedStrings
 - NamedFieldPuns
+- LambdaCase
 
 ghc-options:
 - -fwarn-unused-do-bind

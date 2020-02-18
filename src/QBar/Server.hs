@@ -117,10 +117,10 @@ swayBarOutput options@MainOptions{indicator} = do
       pangoBlockName = _blockName
     }
 
-runBarServer :: BarIO () -> MainOptions -> IO ()
-runBarServer defaultBarConfig options = runBarHost barServer (swayBarInput options) defaultBarConfig
+runBarServer :: MainOptions -> BarIO () -> IO ()
+runBarServer options = runBarHost barServer
   where
-    barServer :: Consumer [BlockOutput] IO ()
+    barServer :: BarIO (Consumer [BlockOutput] IO (), Producer BlockEvent IO ())
     barServer = do
       -- Event to render the bar (fired when block output or theme is changed)
       renderEvent <- liftIO Event.new
@@ -136,8 +136,10 @@ runBarServer defaultBarConfig options = runBarHost barServer (swayBarInput optio
       -- Set default theme
       liftIO $ setTheme' defaultTheme
 
+      bar <- askBar
+
       -- Create control socket
-      controlSocketAsync <- liftIO $ listenUnixSocketAsync options (commandHandler setTheme')
+      controlSocketAsync <- liftIO $ listenUnixSocketAsync options bar (commandHandler setTheme')
       liftIO $ link controlSocketAsync
 
 
@@ -145,7 +147,7 @@ runBarServer defaultBarConfig options = runBarHost barServer (swayBarInput optio
       liftIO $ link =<< async (renderLoop renderEvent themedBlockProducerMVar)
 
       -- Return a consumer that accepts BlockOutputs from the bar host, moves them to the mailbox and signals the renderer to update the bar.
-      signalPipe renderEvent >-> toOutput output
+      return (signalPipe renderEvent >-> toOutput output, swayBarInput options)
 
     renderLoop :: Event.Event -> MVar (Producer [ThemedBlockOutput] IO (), Bool) -> IO ()
     renderLoop renderEvent themedBlockProducerMVar = runEffect $
@@ -190,10 +192,10 @@ runBarServer defaultBarConfig options = runBarHost barServer (swayBarInput optio
           return Success
 
 
-
 -- |Entry point.
 runQBar :: BarIO () -> MainOptions -> IO ()
 runQBar barConfiguration options@MainOptions{barCommand} = runCommand barCommand
   where
-    runCommand BarServerCommand = runBarServer barConfiguration options
+    runCommand BarServerCommand = runBarServer options barConfiguration
+    runCommand ConnectSocket = sendBlockStream options barConfiguration
     runCommand (SetThemeCommand themeName) = sendIpc options $ SetTheme themeName

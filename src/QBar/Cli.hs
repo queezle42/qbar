@@ -8,11 +8,12 @@ import qualified Data.Text as T
 import qualified Data.Text.Lazy as TL
 import Options.Applicative
 
-data BarCommand = BarServerCommand | SetThemeCommand Text
+data BarCommand = BarServerCommand | SetThemeCommand Text | ConnectSocket
 
 barCommandParser :: Parser BarCommand
 barCommandParser = hsubparser (
     command "server" (info (pure BarServerCommand) (progDesc "Start a new qbar server. Should be called by swaybar, i3bar or or another i3bar-protocol compatible host process.")) <>
+    command "connect" (info (pure ConnectSocket) (progDesc "Run blocks on this process but display them on the qbar server.")) <>
     command "theme" (info themeCommandParser (progDesc "Change the theme of the running qbar server.")) <>
     command "default" (info (pure $ SetThemeCommand "default") (progDesc "Shortcut for 'qbar theme default'.")) <>
     command "rainbow" (info (pure $ SetThemeCommand "rainbow") (progDesc "Shortcut for 'qbar theme rainbow'."))

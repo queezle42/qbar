@@ -63,9 +63,9 @@ runBlocks bar HostHandle{barUpdateEvent, newBlockChan, eventHandlerListIORef} = 
         threadDelay 10000
         Event.clear barUpdateEvent
 
-      blocks' <- liftIO $ runBarIO bar $ addNewBlocks blocks
+      blocks' <- lift $ runBarIO bar $ addNewBlocks blocks
 
-      (blockStates, blocks'') <- liftIO $ runBarIO bar $ getBlockStates blocks'
+      (blockStates, blocks'') <- lift $ runBarIO bar $ getBlockStates blocks'
 
       -- Pass blocks to output
       yield $ map fst $ catMaybes blockStates
@@ -126,11 +126,8 @@ filterDuplicates = do
       filterDuplicates' value
 
 
-runBarHost :: Consumer [BlockOutput] IO ()
-  -> Producer BlockEvent IO ()
-  -> BarIO ()
-  -> IO ()
-runBarHost host barEventProducer loadBlocks = do
+runBarHost :: BarIO (Consumer [BlockOutput] IO (), Producer BlockEvent IO ()) -> BarIO () -> IO ()
+runBarHost createHost loadBlocks = do
   -- Create an event used to signal bar updates
   barUpdateEvent <- Event.newSet
   let requestBarUpdate = Event.set barUpdateEvent
@@ -154,10 +151,11 @@ runBarHost host barEventProducer loadBlocks = do
 
   runBarIO bar loadBlocks
 
+  (host, barEventProducer) <- runBarIO bar createHost
+
   let handleStdin = liftIO $ runEffect $ barEventProducer >-> eventDispatcher bar eventHandlerListIORef
   -- Fork stdin handler
   void $ forkFinally (runBarIO bar handleStdin) (\result -> hPutStrLn stderr $ "handleStdin failed: " <> show result)
 
   -- Run bar host
   runEffect $ runBlocks bar hostHandle >-> filterDuplicates >-> host
-
