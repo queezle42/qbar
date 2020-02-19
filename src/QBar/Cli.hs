@@ -40,7 +40,7 @@ barCommandParser :: Parser (MainOptions -> IO ())
 barCommandParser = hsubparser (
     command "server" (info (runBarServer <$> barConfigurationParser) (progDesc "Start a new qbar server. Should be called by swaybar, i3bar or or another i3bar-protocol compatible host process.")) <>
     command "connect" (info (sendBlockStream <$> barConfigurationParser) (progDesc "Run blocks on this process but display them on the qbar server.")) <>
-    command "pipe" (info (sendBlockStream <$> pipeBlockParser) (progDesc "Redirects the stdin of this process to a running bar.")) <>
+    command "pipe" (info pipeClientParser (progDesc "Redirects the stdin of this process to a running bar.")) <>
     command "theme" (info themeCommandParser (progDesc "Change the theme of the running qbar server.")) <>
     command "default" (info (pure $ sendIpc . SetTheme $ "default") (progDesc "Shortcut for 'qbar theme default'.")) <>
     command "rainbow" (info (pure $ sendIpc . SetTheme $ "rainbow") (progDesc "Shortcut for 'qbar theme rainbow'."))
@@ -49,10 +49,10 @@ barCommandParser = hsubparser (
 themeCommandParser :: Parser (MainOptions -> IO ())
 themeCommandParser = sendIpc . SetTheme <$> strArgument (metavar "THEME" <> completeWith (map T.unpack themeNames))
 
-pipeBlockParser :: Parser (BarIO ())
-pipeBlockParser = do
+pipeClientParser :: Parser (MainOptions -> IO ())
+pipeClientParser = do
   events <- switch $ long "events" <> short 'e' <> help "Also encode events to stdout. Every event will be a JSON-encoded line."
-  pure $ addBlock $ pipeBlock events
+  pure $ runPipeClient events
 
 barConfigurationParser :: Parser (BarIO ())
 barConfigurationParser = do

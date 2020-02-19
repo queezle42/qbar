@@ -1,18 +1,28 @@
 module QBar.Blocks.Pipe where
 
 import QBar.BlockOutput
+import QBar.ControlSocket
 import QBar.Core
 
+import Control.Concurrent.Async
 import Data.Aeson (encode)
 import qualified Data.ByteString.Lazy.Char8 as BSC
 import qualified Data.Text.Lazy as T
 import Pipes
+import Pipes.Concurrent
 import qualified Pipes.Prelude as PP
 import System.IO
 
+runPipeClient :: Bool -> MainOptions -> IO ()
+runPipeClient enableEvents mainOptions = do
+  (output, input) <- spawn unbounded
+  hostTask <- async $ sendBlockStream (addBlock $ pipeBlock enableEvents $ fromInput input) mainOptions
+  inputTask <- async $ runEffect $ PP.stdinLn >-> toOutput output
+  void $ waitEitherCancel hostTask inputTask
+
 -- |Special block that reads the processes stdin line-by-line and shows the latest line in the block. Must never be used in a 'server' process or when stdin/stdout is used in another way.
-pipeBlock :: Bool -> PushBlock
-pipeBlock enableEvents = PushMode <$ PP.stdinLn >-> PP.map stringToState
+pipeBlock :: Bool -> Producer String BarIO () -> PushBlock
+pipeBlock enableEvents source = PushMode <$ source >-> PP.map stringToState
   where
     stringToState :: String -> BlockState
     stringToState = attachHandler . mkBlockOutput . normalText . T.pack
