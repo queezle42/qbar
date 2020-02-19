@@ -16,19 +16,19 @@ import System.IO
 runPipeClient :: Bool -> MainOptions -> IO ()
 runPipeClient enableEvents mainOptions = do
   (output, input) <- spawn unbounded
-  hostTask <- async $ sendBlockStream (addBlock $ pipeBlock enableEvents $ fromInput input) mainOptions
+  hostTask <- async $ sendBlockStream (addBlock $ pipeBlock $ fromInput input) mainOptions
   inputTask <- async $ runEffect $ PP.stdinLn >-> toOutput output
   void $ waitEitherCancel hostTask inputTask
-
--- |Special block that reads the processes stdin line-by-line and shows the latest line in the block. Must never be used in a 'server' process or when stdin/stdout is used in another way.
-pipeBlock :: Bool -> Producer String BarIO () -> PushBlock
-pipeBlock enableEvents source = PushMode <$ source >-> PP.map stringToState
   where
-    stringToState :: String -> BlockState
-    stringToState = attachHandler . mkBlockOutput . normalText . T.pack
-    attachHandler :: BlockOutput -> BlockState
-    attachHandler = if enableEvents then mkBlockState' pipeBlockName handler else mkBlockState
-    handler :: BlockEventHandler
-    handler event = liftIO $ BSC.hPutStrLn stderr $ encode event
-    pipeBlockName :: Text
-    pipeBlockName = "pipe"
+    -- |Special block that reads the processes stdin line-by-line and shows the latest line in the block. Must never be used in a 'server' process or when stdin/stdout is used in another way.
+    pipeBlock :: Producer String BarIO () -> PushBlock
+    pipeBlock source = PushMode <$ source >-> PP.map stringToState
+      where
+        stringToState :: String -> BlockState
+        stringToState = attachHandler . mkBlockOutput . normalText . T.pack
+        attachHandler :: BlockOutput -> BlockState
+        attachHandler = if enableEvents then mkBlockState' pipeBlockName handler else mkBlockState
+        handler :: BlockEventHandler
+        handler event = liftIO $ BSC.hPutStrLn stderr $ encode event
+        pipeBlockName :: Text
+        pipeBlockName = "pipe"
