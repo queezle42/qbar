@@ -1,13 +1,16 @@
 module QBar.TagParser where
 
 import QBar.BlockOutput
+import QBar.Color
 
+import Control.Applicative ((<|>))
 import Control.Monad (void)
-import Data.Functor (($>))
+import Data.Attoparsec.Text.Lazy as A
 import Data.Either (either)
+import Data.Functor (($>))
+import Data.Maybe (catMaybes)
 import qualified Data.Text as TS
 import qualified Data.Text.Lazy as T
-import Data.Attoparsec.Text.Lazy as A
 
 type TagState = (Bool, Importance)
 
@@ -18,7 +21,7 @@ tagParser = parser (False, normalImportant)
     parser (active, importance) = mconcat <$> many' singleElementParser
       where
         singleElementParser :: Parser BlockText
-        singleElementParser = choice [textParser, activeTagParser, importanceTagParser]
+        singleElementParser = choice [textParser, activeTagParser, importanceTagParser, spanParser]
 
         textParser :: Parser BlockText
         textParser = mkText active importance . T.fromStrict <$> A.takeWhile1 (notInClass "<>")
@@ -45,6 +48,40 @@ tagParser = parser (False, normalImportant)
             ("error", errorImportant),
             ("critical", criticalImportant)
           ]
+
+    spanParser :: Parser BlockText
+    spanParser = do
+      void $ string "<span"
+      (colors, backgrounds) <- unzip <$> (many' $ colorAttribute <|> backgroundAttribute)
+      let color = listToMaybe . catMaybes $ colors
+      let background = listToMaybe . catMaybes $ backgrounds
+      void $ char '>'
+      content <- T.fromStrict <$> A.takeWhile1 (notInClass "<>")
+      void $ string $ "</span>"
+      return $ mkStyledText color background content
+      where
+        colorAttributeParser :: Text -> Parser Color
+        colorAttributeParser attribute = do
+          space >> skipSpace
+          void $ string $ T.toStrict attribute
+          skipSpace
+          void $ char '='
+          skipSpace
+          value <- (
+              char '\'' *> colorParser <* char '\''
+              <|> char '"' *> colorParser <* char '"'
+            )
+          return value
+
+        colorAttribute :: Parser (Maybe Color, Maybe Color)
+        colorAttribute = do
+          color <- colorAttributeParser "color"
+          pure (Just color, Nothing)
+        backgroundAttribute :: Parser (Maybe Color, Maybe Color)
+        backgroundAttribute = do
+          background <- colorAttributeParser "background"
+          pure (Nothing, Just background)
+
 
 
 parseTags :: T.Text -> Either String BlockText

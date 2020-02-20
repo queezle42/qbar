@@ -4,19 +4,19 @@
 module QBar.Theme where
 
 import QBar.BlockOutput
+import QBar.Color
 
+import Control.Applicative ((<|>))
 import Control.Lens ((^.))
 import Control.Monad.State.Lazy (State, evalState, get, put)
 import Data.Colour.RGBSpace
 import Data.Colour.RGBSpace.HSV (hsv)
 import qualified Data.HashMap.Lazy as HM
+import Data.Maybe (fromMaybe)
 import qualified Data.Text.Lazy as T
 import Data.Time.Clock.POSIX (getPOSIXTime)
 import Pipes
 
-
-data Color = ColorRGB (RGB Double) | ColorRGBA (RGB Double) Double
-  deriving (Eq, Show)
 
 data ThemedBlockOutput = ThemedBlockOutput {
     _fullText :: ThemedBlockText,
@@ -87,6 +87,13 @@ mkTheme theming' = StaticTheme $ map themeBlock
     themeBlockText theming (BlockText b) = ThemedBlockText $ themeSegment theming <$> b
     themeSegment :: SimplifiedTheme -> BlockTextSegment -> ThemedBlockTextSegment
     themeSegment theming BlockTextSegment {active, importance, segmentText} = mkThemedSegment (theming active importance) segmentText
+    themeSegment theming StyledBlockTextSegment {color, backgroundColor, segmentText} = mkThemedSegment (themedColor, themedBackgroundColor) segmentText
+      where
+        themedColor :: Color
+        themedColor = fromMaybe normalThemedColor color
+        themedBackgroundColor :: Maybe Color
+        themedBackgroundColor = backgroundColor <|> normalThemedBackground
+        (normalThemedColor, normalThemedBackground) = theming False normalImportant
 
 mkThemedBlockOutput :: (Color, Maybe Color) -> Text -> ThemedBlockOutput
 mkThemedBlockOutput color text = ThemedBlockOutput {

@@ -3,7 +3,10 @@
 
 module QBar.BlockOutput where
 
+import QBar.Color
+
 import Control.Lens
+import Data.Aeson
 import Data.Aeson.TH
 import Data.Int (Int64)
 import qualified Data.Text.Lazy as T
@@ -30,9 +33,15 @@ data BlockTextSegment = BlockTextSegment {
     importance :: Importance,
     segmentText :: T.Text
   }
+  | StyledBlockTextSegment {
+    segmentText :: T.Text,
+    color :: Maybe Color,
+    backgroundColor :: Maybe Color
+  }
   deriving (Eq, Show)
 
 type Importance = Float
+
 
 $(deriveJSON defaultOptions ''BlockOutput)
 makeLenses ''BlockOutput
@@ -142,12 +151,14 @@ rawText (BlockText b) = foldMap rawTextFromSegment b
   where
     rawTextFromSegment :: BlockTextSegment -> T.Text
     rawTextFromSegment BlockTextSegment{segmentText} = segmentText
+    rawTextFromSegment StyledBlockTextSegment{segmentText} = segmentText
 
 printedLength :: BlockText -> Int64
 printedLength (BlockText b) = sum . map segmentLength $ b
   where
     segmentLength :: BlockTextSegment -> Int64
     segmentLength BlockTextSegment { segmentText } = T.length segmentText
+    segmentLength StyledBlockTextSegment { segmentText } = T.length segmentText
 
 mkText :: Bool -> Importance -> T.Text -> BlockText
 mkText active importance segmentText = BlockText [BlockTextSegment { segmentText = pangoFriendly segmentText, active, importance }]
@@ -169,3 +180,6 @@ normalText = mkText False normalImportant
 
 surroundWith :: (T.Text -> BlockText) -> T.Text -> T.Text -> BlockText -> BlockText
 surroundWith format left right middle = format left <> middle <> format right
+
+mkStyledText :: Maybe Color -> Maybe Color -> Text -> BlockText
+mkStyledText color backgroundColor text = BlockText $ [StyledBlockTextSegment { segmentText=text, color, backgroundColor }]
