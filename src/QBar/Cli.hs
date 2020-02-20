@@ -38,12 +38,16 @@ mainParser = do
 
 barCommandParser :: Parser (MainOptions -> IO ())
 barCommandParser = hsubparser (
-    command "server" (info (runBarServer <$> barConfigurationParser) (progDesc "Start a new qbar server. Should be called by swaybar, i3bar or or another i3bar-protocol compatible host process.")) <>
-    command "connect" (info (sendBlockStream <$> barConfigurationParser) (progDesc "Run blocks on this process but display them on the qbar server.")) <>
+    command "server" (info serverCommandParser (progDesc "Start a new server.")) <>
     command "pipe" (info pipeClientParser (progDesc "Redirects the stdin of this process to a running bar.")) <>
-    command "theme" (info themeCommandParser (progDesc "Change the theme of the running qbar server.")) <>
-    command "default" (info (pure $ sendIpc . SetTheme $ "default") (progDesc "Shortcut for 'qbar theme default'.")) <>
-    command "rainbow" (info (pure $ sendIpc . SetTheme $ "rainbow") (progDesc "Shortcut for 'qbar theme rainbow'."))
+    command "theme" (info themeCommandParser (progDesc "Change the theme of the running qbar server."))
+  )
+
+serverCommandParser :: Parser (MainOptions -> IO ())
+serverCommandParser = hsubparser (
+    command "swaybar" (info (runBarServer <$> barConfigurationParser) (progDesc "Start a new server for swaybar. Should be called by swaybar.")) <>
+    command "i3bar" (info (runBarServer <$> barConfigurationParser) (progDesc "Start a new server for i3bar. Should be called by i3bar.")) <>
+    command "connect" (info (sendBlockStream <$> barConfigurationParser) (progDesc "Run blocks on this process but send them to another qbar server."))
   )
 
 themeCommandParser :: Parser (MainOptions -> IO ())

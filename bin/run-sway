@@ -2,6 +2,7 @@
 
 set -e
 set -u
+set -o pipefail
 
 readonly executable_name=qbar
 readonly sway_bar_id=bar-0
@@ -16,7 +17,7 @@ mkfifo $stderr
 
 trap "swaymsg bar $sway_bar_id status_command '$default_bar_command'; rm -rf $temp_dir" EXIT INT HUP TERM
 
-swaymsg bar $sway_bar_id status_command "exec $(stack path --local-install-root)/bin/$executable_name $@ -- server 2> $stderr"
+swaymsg bar $sway_bar_id status_command "exec $(stack path --local-install-root)/bin/$executable_name $@ -- server swaybar 2> $stderr"
 
 # show output and run forever (use Ctrl-C to stop)
 cat $stderr
