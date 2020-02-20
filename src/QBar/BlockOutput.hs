@@ -48,8 +48,16 @@ mkBlockOutput text = BlockOutput {
   _invalid = False
 }
 
+mkBlockOutput' :: BlockText -> BlockText -> BlockOutput
+mkBlockOutput' full short = BlockOutput {
+  _fullText = full,
+  _shortText = Just short,
+  _blockName = Nothing,
+  _invalid = False
+}
+
 mkErrorOutput :: T.Text -> BlockOutput
-mkErrorOutput = mkBlockOutput . importantText criticalImportant
+mkErrorOutput errorText = mkBlockOutput . importantText criticalImportant $ "[" <> errorText <> "]"
 
 emptyBlock :: BlockOutput
 emptyBlock = mkBlockOutput mempty

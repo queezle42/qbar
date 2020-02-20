@@ -4,6 +4,7 @@
 module QBar.Core where
 
 import QBar.BlockOutput
+import QBar.TagParser
 
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.Async
@@ -311,23 +312,14 @@ blockScript path = forever $ updateBlock =<< (lift blockScriptAction)
       -- I am trying to replace i3blocks scripts with native haskell blocks, so I do not need it
       (exitCode, output) <- liftIO $ readProcessStdout $ shell path
       return $ case exitCode of
-        ExitSuccess -> createScriptBlock False normalImportant output
+        ExitSuccess -> createScriptBlock output
         (ExitFailure nr) -> case nr of
-          27 -> createScriptBlock False warnImportant output
-          28 -> createScriptBlock False errorImportant output
-          29 -> createScriptBlock False criticalImportant output
-          30 -> createScriptBlock True normalImportant output
-          31 -> createScriptBlock True warnImportant output
-          32 -> createScriptBlock True errorImportant output
-          33 -> createScriptBlock True criticalImportant output
-          _ -> mkErrorOutput $ "[" <> T.pack (show nr) <> "]"
-    createScriptBlock :: Bool -> Importance -> C8.ByteString -> BlockOutput
-    createScriptBlock active importance output = case map E.decodeUtf8 (C8.lines output) of
-      (text:short:_) -> shortText ?~ normalText short $ createScriptBlock' active importance text
-      (text:_) -> createScriptBlock' active importance text
-      [] -> createScriptBlock' active importance "-"
-    createScriptBlock' :: Bool -> Importance -> T.Text -> BlockOutput
-    createScriptBlock' active importance text = blockName ?~ T.pack path $ mkBlockOutput $ mkText active importance text
+          _ -> mkErrorOutput $ "exit code " <> T.pack (show nr) <> ""
+    createScriptBlock :: C8.ByteString -> BlockOutput
+    createScriptBlock output = case map E.decodeUtf8 (C8.lines output) of
+      (text:short:_) -> parseTags'' text short
+      (text:_) -> parseTags' text
+      [] -> emptyBlock
 
 persistentBlockScript :: FilePath -> PushBlock
 -- The outer catchP only catches errors that occur during process creation
@@ -335,7 +327,7 @@ persistentBlockScript path = catchP startScriptProcess handleError
   where
     handleError :: IOException -> PushBlock
     handleError e = do
-      updateBlock . mkErrorOutput $ "[" <> T.pack (show e) <> "]"
+      updateBlock . mkErrorOutput $ T.pack (show e)
       exitBlock
     handleErrorWithProcess :: (Process i o e) -> IOException -> PushBlock
     handleErrorWithProcess process e = do
@@ -351,7 +343,7 @@ persistentBlockScript path = catchP startScriptProcess handleError
     blockFromHandle :: Handle -> PushBlock
     blockFromHandle handle = forever $ do
       line <- liftIO $ TIO.hGetLine handle
-      updateBlock $ mkBlockOutput . normalText $ line
+      updateBlock $ parseTags' line
       lift updateBar
 
 addBlock :: IsCachable a => a -> BarIO ()

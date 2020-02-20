@@ -3,6 +3,7 @@ module QBar.Blocks.Pipe where
 import QBar.BlockOutput
 import QBar.ControlSocket
 import QBar.Core
+import QBar.TagParser
 
 import Control.Concurrent.Async
 import Data.Aeson (encode)
@@ -25,7 +26,7 @@ runPipeClient enableEvents mainOptions = do
     pipeBlock source = PushMode <$ source >-> PP.map stringToState
       where
         stringToState :: String -> BlockState
-        stringToState = attachHandler . mkBlockOutput . normalText . T.pack
+        stringToState = attachHandler . parseTags' . T.pack
         attachHandler :: BlockOutput -> BlockState
         attachHandler = if enableEvents then mkBlockState' pipeBlockName handler else mkBlockState
         handler :: BlockEventHandler
