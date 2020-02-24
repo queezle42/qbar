@@ -74,6 +74,7 @@ executables:
     - -threaded
     - -rtsopts
     - -with-rtsopts=-N
+    - -with-rtsopts=-I0
     dependencies:
     - qbar
 
