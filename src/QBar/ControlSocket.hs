@@ -18,13 +18,10 @@ import Control.Concurrent (forkFinally)
 import Control.Concurrent.Async
 import Data.Aeson (FromJSON, ToJSON)
 import Data.Aeson.TH
-import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC
 import System.FilePath ((</>))
 import System.IO
-import Data.Either (either)
-import Data.Maybe (maybe)
-import Data.Text.Lazy (Text, pack)
+import Data.Text.Lazy (pack)
 import qualified Data.Text.Lazy as T
 import Network.Socket
 import Pipes
@@ -220,7 +217,8 @@ listenUnixSocket options@MainOptions{verbose} bar commandHandler = do
   socketExists <- doesFileExist socketPath
   when socketExists $ removeFile socketPath
   sock <- socket AF_UNIX Stream defaultProtocol
-  setCloseOnExecIfNeeded $ fdSocket sock
+  -- TODO: unsafe probably not what we want
+  setCloseOnExecIfNeeded =<< unsafeFdSocket sock
   bind sock (SockAddrUnix socketPath)
   listen sock 5
   forever $ do

@@ -10,7 +10,7 @@ import QBar.DefaultConfig
 import QBar.Server
 import QBar.Theme
 
-import Control.Monad (join, sequence_)
+import Control.Monad (join)
 import qualified Data.Text.Lazy as T
 import Options.Applicative
 

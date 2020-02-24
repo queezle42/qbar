@@ -4,9 +4,7 @@ import QBar.BlockOutput
 import QBar.Color
 
 import Control.Applicative ((<|>))
-import Control.Monad (void)
 import Data.Attoparsec.Text.Lazy as A
-import Data.Either (either)
 import Data.Functor (($>))
 import Data.Maybe (catMaybes)
 import qualified Data.Text as TS
