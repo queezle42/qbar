@@ -7,7 +7,6 @@ import QBar.Time
 import qualified Data.Text.Lazy as T
 import Data.Time.Format
 import Data.Time.LocalTime
-import Pipes
 import Control.Lens
 
 

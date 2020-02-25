@@ -3,11 +3,16 @@
 module Prelude
   ( module BasePrelude,
     ByteString.ByteString,
+    Control.Monad.forever,
+    Control.Monad.unless,
+    Control.Monad.void,
+    Control.Monad.when,
+    Control.Monad.IO.Class.MonadIO,
+    Control.Monad.IO.Class.liftIO,
     Text.Text,
     Maybe.listToMaybe,
     error,
     errorWithoutStackTrace,
-    forever,
     head,
     intercalate,
     trace,
@@ -16,10 +21,7 @@ module Prelude
     traceShowId,
     traceM,
     traceShowM,
-    undefined,
-    unless,
-    void,
-    when
+    undefined
   )
 where
 
@@ -30,7 +32,8 @@ import BasePrelude hiding
     undefined,
   )
 import qualified BasePrelude as P
-import Control.Monad (forever, void, when, unless)
+import qualified Control.Monad
+import qualified Control.Monad.IO.Class
 import qualified Data.ByteString as ByteString
 import qualified Data.Maybe as Maybe
 import qualified Data.Text.Lazy as Text
