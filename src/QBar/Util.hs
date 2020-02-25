@@ -17,8 +17,8 @@ signalPipe event = signalPipe'
       liftIO $ Event.signal event
       signalPipe'
 
-randomIdentifier :: IO Text
-randomIdentifier = T.pack <$> replicateM 8 randomCharacter
+randomIdentifier :: MonadIO m => m Text
+randomIdentifier = liftIO $ T.pack <$> replicateM 8 randomCharacter
   where
     randomCharacter :: IO Char
     randomCharacter = do
