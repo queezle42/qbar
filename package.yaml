@@ -51,6 +51,7 @@ default-extensions:
 - OverloadedStrings
 - NamedFieldPuns
 - LambdaCase
+- MultiWayIf
 
 ghc-options:
 - -fwarn-unused-do-bind
