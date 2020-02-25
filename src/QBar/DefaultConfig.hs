@@ -8,11 +8,24 @@ import Pipes
 
 import Control.Lens
 
-blockLocation :: String -> FilePath
-blockLocation name = "~/.config/qbar/blocks/" <> name
-
 defaultBarConfig :: BarIO ()
 defaultBarConfig = do
+  systemInfoInterval <- sharedInterval 10
+
+  let battery = systemInfoInterval $ batteryBlock >-> modify (blockName ?~ "battery")
+  let cpuUsage = systemInfoInterval $ cpuUsageBlock 1 >-> modify ((blockName ?~ "cpuUsage") . addIcon "💻\xFE0E")
+
+  -- TODO: commented-out blocks should be added as soon as they are implemented in qbar
+  addBlock dateBlock
+  addBlock battery
+  --addBlock volumeBlock
+  addBlock cpuUsage
+  --addBlock ramUsageBlock
+  --addBlock cpuTemperatureBlock
+  --addBlock networkBlock
+
+legacyBarConfig :: BarIO ()
+legacyBarConfig = do
   systemInfoInterval <- sharedInterval 10
 
   let todo = systemInfoInterval (blockScript $ blockLocation "todo")
@@ -33,3 +46,6 @@ defaultBarConfig = do
   addBlock networkEnvironment
   addBlock wifi
   addBlock todo
+  where
+    blockLocation :: String -> FilePath
+    blockLocation name = "~/.config/qbar/blocks/" <> name

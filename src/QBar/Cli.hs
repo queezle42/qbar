@@ -67,7 +67,14 @@ barConfigurationParser = do
     l -> sequence_ l
 
 blockParser :: Parser (BarIO ())
-blockParser = hsubparser (
-    command "default" (info (pure defaultBarConfig) (progDesc "Load default set of blocks.")) <>
+blockParser = subparser (
+    commandGroup "Available blocks:" <>
     command "date" (info (pure $ addBlock dateBlock) (progDesc "Load the date and time block."))
+  )
+  <|>
+  subparser (
+    hidden <>
+    commandGroup "Available presets:" <>
+    command "default" (info (pure defaultBarConfig) (progDesc "Load default set of blocks.")) <>
+    command "legacy" (info (pure legacyBarConfig) (progDesc "Load the legacy configuration. Requires some custom block scripts."))
   )
