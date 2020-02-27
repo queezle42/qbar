@@ -5,8 +5,8 @@ module QBar.Core where
 
 import QBar.BlockOutput
 import QBar.TagParser
+import QBar.Time
 
-import Control.Concurrent (threadDelay)
 import Control.Concurrent.Async
 import Control.Concurrent.Event as Event
 import Control.Concurrent.MVar
@@ -18,8 +18,8 @@ import Control.Monad.State (StateT)
 import Control.Monad.Writer (WriterT)
 import Data.Aeson.TH
 import qualified Data.ByteString.Lazy.Char8 as C8
+import Data.Either (isRight)
 import Data.Int (Int64)
-import Data.Maybe (catMaybes)
 import qualified Data.Text.Lazy as T
 import qualified Data.Text.Lazy.Encoding as E
 import qualified Data.Text.Lazy.IO as TIO
@@ -71,6 +71,8 @@ class IsCachable a where
 
 instance IsCachable PushBlock where
   toCachedBlock = cachePushBlock
+instance IsCachable PullBlock where
+  toCachedBlock = toCachedBlock . schedulePullBlock
 instance IsCachable BlockCache where
   toCachedBlock = id
 
@@ -89,8 +91,13 @@ type BarIO = SafeT (ReaderT Bar IO)
 
 data Bar = Bar {
   requestBarUpdate :: IO (),
-  newBlockChan :: TChan BlockCache
+  newBlockChan :: TChan BlockCache,
+  barSleepScheduler :: SleepScheduler
 }
+instance HasSleepScheduler BarIO where
+  askSleepScheduler = barSleepScheduler <$> askBar
+instance HasSleepScheduler (Proxy a' a b' b BarIO) where
+  askSleepScheduler = lift askSleepScheduler
 
 
 newtype BarUpdateChannel = BarUpdateChannel (IO ())
@@ -142,10 +149,49 @@ updateEventHandler :: BlockEventHandler -> BlockState -> BlockState
 updateEventHandler _ Nothing = Nothing
 updateEventHandler eventHandler (Just (blockOutput, _)) = Just (blockOutput, Just eventHandler)
 
+hasEventHandler :: BlockState -> Bool
+hasEventHandler (Just (_, Just _)) = True
+hasEventHandler _ = False
+
+invalidateBlockState :: BlockState -> BlockState
+invalidateBlockState Nothing = Nothing
+invalidateBlockState (Just (output, eventHandler)) = Just (invalidateBlock output, eventHandler)
+
 
 runBarIO :: Bar -> BarIO r -> IO r
 runBarIO bar action = runReaderT (runSafeT action) bar
 
+
+defaultInterval :: Interval
+defaultInterval = everyNSeconds 10
+
+schedulePullBlock :: PullBlock -> PushBlock
+schedulePullBlock pullBlock = PushMode <$ pullBlock >-> sleepToNextInterval
+  where
+    sleepToNextInterval :: Pipe BlockState BlockState BarIO PullMode
+    sleepToNextInterval = do
+      event <- liftIO Event.new
+      forever $ do
+        state <- await
+        if hasEventHandler state
+          then do
+            -- If state already has an event handler, we do not attach another one
+            yield state
+            sleepUntilInterval defaultInterval
+          else do
+            -- Attach a click handler that will trigger a block update
+            yield $ updateEventHandler (triggerOnClick event) state
+
+            scheduler <- askSleepScheduler
+            result <- liftIO $ do
+              timerTask <- async $ sleepUntilInterval' scheduler defaultInterval
+              eventTask <- async $ Event.wait event
+              waitEitherCancel timerTask eventTask
+
+            when (isRight result) $ yield $ invalidateBlockState state
+
+    triggerOnClick :: Event -> BlockEvent -> BarIO ()
+    triggerOnClick event _ = liftIO $ Event.signal event
 
 newCache :: Producer [BlockState] IO () -> BlockCache
 newCache input = newCacheInternal =<< newCache''
@@ -227,81 +273,6 @@ autoPadding = autoPadding' 0 0
     padShortText :: Int64 -> BlockOutput -> BlockOutput
     padShortText len = over (shortText._Just) $ \s -> padString (len - printedLength s) <> s
 
-
--- | Create a shared interval. Takes a BarUpdateChannel to signal bar updates and an interval (in seconds).Data.Maybe
--- Returns an IO action that can be used to attach blocks to the shared interval and an async that contains a reference to the scheduler thread.
-sharedInterval :: Int -> BarIO (PullBlock -> BlockCache)
-sharedInterval seconds = do
-  clientsMVar <- liftIO $ newMVar ([] :: [(MVar PullBlock, Output BlockState)])
-
-  startEvent <- liftIO Event.new
-
-  task <- barAsync $ do
-    -- Wait for at least one subscribed client
-    liftIO $ Event.wait startEvent
-    forever $ do
-      liftIO $ threadDelay $ seconds * 1000000
-      -- Updates all client blocks
-      -- If send returns 'False' the clients mailbox has been closed, so it is removed
-      bar <- askBar
-      liftIO $ modifyMVar_ clientsMVar $ fmap catMaybes . mapConcurrently (runBarIO bar . runAndFilterClient)
-      -- Then update the bar
-      updateBar
-
-  liftIO $ link task
-
-  return (addClient startEvent clientsMVar)
-  where
-    runAndFilterClient :: (MVar PullBlock, Output BlockState) -> BarIO (Maybe (MVar PullBlock, Output BlockState))
-    runAndFilterClient client = do
-      result <- runClient client
-      return $ if result then Just client else Nothing
-    runClient :: (MVar PullBlock, Output BlockState) -> BarIO Bool
-    runClient (blockMVar, output) = do
-      bar <- askBar
-      liftIO $ modifyMVar blockMVar $ \blockProducer -> do
-        result <- runReaderT (runSafeT $ next blockProducer) bar
-        case result of
-          Left _ -> return (exitBlock, False)
-          Right (blockState, blockProducer') -> do
-            success <- atomically $ send output $ updateEventHandler (updateClickHandler blockState) blockState
-            if success
-              -- Store new BlockProducer back into MVar
-              then return (blockProducer', True)
-              -- Mailbox is sealed, stop running producer
-              else return (exitBlock, False)
-      where
-        updateClickHandler :: BlockState -> BlockEvent -> BarIO ()
-        updateClickHandler Nothing _ = return ()
-        updateClickHandler (Just (block, _)) _ = do
-          -- Give user feedback that the block is updating
-          let outdatedBlock = invalidateBlock block
-          -- The invalidated block output has no event handler
-          liftIO $ void $ atomically $ send output . Just $ (outdatedBlock, Nothing)
-          -- Notify bar about changed block state to display the feedback
-          updateBar
-          -- Run a normal block update to update the block to the new value
-          void $ runClient (blockMVar, output)
-          -- Notify bar about changed block state, this is usually done by the shared interval handler
-          updateBar
-    addClient :: Event.Event -> MVar [(MVar PullBlock, Output BlockState)] -> PullBlock -> BlockCache
-    addClient startEvent clientsMVar blockProducer = do
-      -- Spawn the mailbox that preserves the latest block
-      (output, input) <- liftIO $ spawn $ latest Nothing
-
-      blockMVar <- liftIO $ newMVar blockProducer
-
-      -- Generate initial block and send it to the mailbox
-      lift $ void $ runClient (blockMVar, output)
-
-      -- Register the client for regular updates
-      liftIO $ modifyMVar_ clientsMVar $ \ clients -> return ((blockMVar, output):clients)
-
-      -- Start update thread (if not already started)
-      liftIO $ Event.set startEvent
-
-      -- Return a block producer from the mailbox
-      cacheFromInput input
 
 blockScript :: FilePath -> PullBlock
 blockScript path = forever $ updateBlock =<< (lift blockScriptAction)

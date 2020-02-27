@@ -69,7 +69,8 @@ barConfigurationParser = do
 blockParser :: Parser (BarIO ())
 blockParser = subparser (
     commandGroup "Available blocks:" <>
-    command "date" (info (pure $ addBlock dateBlock) (progDesc "Load the date and time block."))
+    command "date" (info (pure $ addBlock dateBlock) (progDesc "Load the date and time block.")) <>
+    command "cpu" (info (pure $ addBlock $ cpuUsageBlock 1) (progDesc "Load the cpu usage block."))
   )
   <|>
   subparser (

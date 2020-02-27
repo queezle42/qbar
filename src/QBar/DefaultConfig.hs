@@ -10,10 +10,8 @@ import Control.Lens
 
 defaultBarConfig :: BarIO ()
 defaultBarConfig = do
-  systemInfoInterval <- sharedInterval 10
-
-  let battery = systemInfoInterval $ batteryBlock >-> modify (blockName ?~ "battery")
-  let cpuUsage = systemInfoInterval $ cpuUsageBlock 1 >-> modify ((blockName ?~ "cpuUsage") . addIcon "💻\xFE0E")
+  let battery = batteryBlock >-> modify (blockName ?~ "battery")
+  let cpuUsage = cpuUsageBlock 1 >-> modify ((blockName ?~ "cpuUsage") . addIcon "💻\xFE0E")
 
   -- TODO: commented-out blocks should be added as soon as they are implemented in qbar
   addBlock dateBlock
@@ -26,16 +24,14 @@ defaultBarConfig = do
 
 legacyBarConfig :: BarIO ()
 legacyBarConfig = do
-  systemInfoInterval <- sharedInterval 10
-
-  let todo = systemInfoInterval (blockScript $ blockLocation "todo")
-  let wifi = systemInfoInterval $ (blockScript $ blockLocation "wifi2") >-> modify (addIcon "📡\xFE0E")
-  let networkEnvironment = systemInfoInterval (blockScript $ blockLocation "network-environment")
-  let ram = systemInfoInterval $ (blockScript $ blockLocation "memory") >-> modify (addIcon "🐏\xFE0E") >-> autoPadding
-  let temperature = systemInfoInterval $ (blockScript $ blockLocation "temperature") >-> autoPadding
+  let todo = blockScript $ blockLocation "todo"
+  let wifi = (blockScript $ blockLocation "wifi2") >-> modify (addIcon "📡\xFE0E")
+  let networkEnvironment = blockScript $ blockLocation "network-environment"
+  let ram = (blockScript $ blockLocation "memory") >-> modify (addIcon "🐏\xFE0E") >-> autoPadding
+  let temperature = (blockScript $ blockLocation "temperature") >-> autoPadding
   let volumeBlock = persistentBlockScript $ blockLocation "volume-pulseaudio -S -F3"
-  let battery = systemInfoInterval $ batteryBlock >-> modify (blockName ?~ "battery")
-  let cpuUsage = systemInfoInterval $ cpuUsageBlock 1 >-> modify ((blockName ?~ "cpuUsage") . addIcon "💻\xFE0E")
+  let battery = batteryBlock >-> modify (blockName ?~ "battery")
+  let cpuUsage = cpuUsageBlock 1 >-> modify ((blockName ?~ "cpuUsage") . addIcon "💻\xFE0E")
 
   addBlock dateBlock
   addBlock battery

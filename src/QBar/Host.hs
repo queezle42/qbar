@@ -5,6 +5,7 @@ module QBar.Host where
 
 import QBar.BlockOutput
 import QBar.Core
+import QBar.Time
 
 import Control.Concurrent (forkIO, forkFinally, threadDelay)
 import Control.Concurrent.Event as Event
@@ -134,7 +135,9 @@ runBarHost createHost loadBlocks = do
   -- Create channel to send new block producers to render loop
   newBlockChan <- newTChanIO
 
-  let bar = Bar { requestBarUpdate, newBlockChan }
+  barSleepScheduler <- createSleepScheduler
+
+  let bar = Bar { requestBarUpdate, newBlockChan, barSleepScheduler }
 
   -- Install signal handler for SIGCONT
   installSignalHandlers bar
