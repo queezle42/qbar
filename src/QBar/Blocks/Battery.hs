@@ -52,12 +52,11 @@ getBatteryState path = tryMaybe $ do
 
 
 batteryBlock :: PullBlock
-batteryBlock = do
+batteryBlock = forever $ do
   batteryPaths <- liftIO $ map ((apiPath <> "/") <>) . filter (T.isPrefixOf "BAT" . T.pack) <$> getDirectoryContents apiPath
   batteryStates <- liftIO $ mapM getBatteryState batteryPaths
   isPlugged <- liftIO getPluggedState
   updateBatteryBlock isPlugged $ catMaybes batteryStates
-  batteryBlock
   where
     apiPath :: FilePath
     apiPath = "/sys/class/power_supply"

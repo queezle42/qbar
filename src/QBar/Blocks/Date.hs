@@ -11,10 +11,9 @@ import Control.Lens
 
 
 dateBlock :: PushBlock
-dateBlock = do
+dateBlock = forever $ do
   updateBlock =<< liftIO dateBlockOutput
-  liftIO $ sleepUntil =<< nextMinute
-  dateBlock
+  sleepUntilInterval everyMinute
 
 
 dateBlockOutput :: IO BlockOutput
