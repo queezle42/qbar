@@ -9,6 +9,7 @@ import QBar.Time
 
 import Control.Concurrent (forkIO, forkFinally, threadDelay)
 import Control.Concurrent.Event as Event
+import Control.Concurrent.MVar (MVar, newMVar, modifyMVar_, swapMVar)
 import Control.Concurrent.STM.TChan (TChan, newTChanIO, tryReadTChan)
 import Control.Exception (SomeException, catch)
 import Control.Lens hiding (each, (.=))
@@ -22,6 +23,7 @@ import System.Posix.Signals
 
 data HostHandle = HostHandle {
   barUpdateEvent :: BarUpdateEvent,
+  followupEventWaitTimeMVar :: MVar Int,
   newBlockChan :: TChan BlockCache,
   eventHandlerListIORef :: IORef [(T.Text, BlockEventHandler)]
 }
@@ -32,7 +34,7 @@ installSignalHandlers bar = void $ installHandler sigCONT (Catch sigContAction) 
     sigContAction :: IO ()
     sigContAction = do
       hPutStrLn stderr "SIGCONT received"
-      updateBar' bar
+      updateBarDefault' bar
 
 eventDispatcher :: Bar -> IORef [(T.Text, BlockEventHandler)] -> Consumer BlockEvent IO ()
 eventDispatcher bar eventHandlerListIORef = eventDispatcher'
@@ -51,19 +53,21 @@ eventDispatcher bar eventHandlerListIORef = eventDispatcher'
 
 
 runBlocks :: Bar -> HostHandle -> Producer [BlockOutput] IO ()
-runBlocks bar HostHandle{barUpdateEvent, newBlockChan, eventHandlerListIORef} = runBlocks' []
+runBlocks bar HostHandle{barUpdateEvent, followupEventWaitTimeMVar, newBlockChan, eventHandlerListIORef} = runBlocks' []
   where
     runBlocks' :: [BlockCache] -> Producer [BlockOutput] IO ()
     runBlocks' blocks = do
-      liftIO $ do
         -- Wait for an update request
-        Event.wait barUpdateEvent
+      liftIO $ Event.wait barUpdateEvent
+
+      -- Get current value and reset to default value
+      followupEventWaitTime' <- liftIO $ swapMVar followupEventWaitTimeMVar followupEventWaitTimeDefault
 
         -- Wait for 10ms after first events to catch (almost-)simultaneous event updates
-        threadDelay 10000
-        Event.clear barUpdateEvent
+      liftIO $ threadDelay followupEventWaitTime'
+      liftIO $ Event.clear barUpdateEvent
 
-      blocks' <- lift $ runBarIO bar $ addNewBlocks blocks
+      blocks' <- runBarIO bar $ addNewBlocks blocks
 
       (blockStates, blocks'') <- lift $ runBarIO bar $ getBlockStates blocks'
 
@@ -73,8 +77,8 @@ runBlocks bar HostHandle{barUpdateEvent, newBlockChan, eventHandlerListIORef} = 
       -- Register new event handlers immediately after rendering
       liftIO $ updateEventHandlers blockStates
 
-      -- Wait for 90ms after rendering a line to limit cpu load of rapid events
-      liftIO $ threadDelay 90000
+      -- Wait for 100ms after rendering a line to limit cpu load of rapid events
+      liftIO $ threadDelay 100000
 
       -- Loop
       runBlocks' blocks''
@@ -126,30 +130,47 @@ filterDuplicates = do
       filterDuplicates' value
 
 
+followupEventWaitTime :: BlockUpdateReason -> Int
+followupEventWaitTime DefaultUpdate = 10000
+followupEventWaitTime PullUpdate = 50000
+followupEventWaitTime UserUpdate = 0
+
+followupEventWaitTimeDefault :: Int
+followupEventWaitTimeDefault = followupEventWaitTime PullUpdate
+
+requestBarUpdateHandler :: HostHandle -> BlockUpdateReason -> IO ()
+requestBarUpdateHandler HostHandle{barUpdateEvent, followupEventWaitTimeMVar} blockUpdateReason = do
+  modifyMVar_ followupEventWaitTimeMVar $ \current -> return $ min current $ followupEventWaitTime blockUpdateReason
+  Event.set barUpdateEvent
+
+
 runBarHost :: BarIO (Consumer [BlockOutput] IO (), Producer BlockEvent IO ()) -> BarIO () -> IO ()
 runBarHost createHost loadBlocks = do
   -- Create an event used to signal bar updates
   barUpdateEvent <- Event.newSet
-  let requestBarUpdate = Event.set barUpdateEvent
+  followupEventWaitTimeMVar <- newMVar 0
 
   -- Create channel to send new block producers to render loop
   newBlockChan <- newTChanIO
 
   barSleepScheduler <- createSleepScheduler
 
-  let bar = Bar { requestBarUpdate, newBlockChan, barSleepScheduler }
-
-  -- Install signal handler for SIGCONT
-  installSignalHandlers bar
-
   -- Create IORef for event handlers
   eventHandlerListIORef <- newIORef []
 
   let hostHandle = HostHandle {
     barUpdateEvent,
+    followupEventWaitTimeMVar,
     newBlockChan,
     eventHandlerListIORef
   }
+
+  let requestBarUpdate = requestBarUpdateHandler hostHandle
+
+  let bar = Bar {requestBarUpdate, newBlockChan, barSleepScheduler}
+
+  -- Install signal handler for SIGCONT
+  installSignalHandlers bar
 
   runBarIO bar loadBlocks
 

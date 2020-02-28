@@ -111,7 +111,7 @@ instance IsStream BlockStream where
     prefix <- liftIO $ (<> "_") <$> randomIdentifier
     let blockConsumer = updateBarP bar >-> attachHandlerP eventOutput prefix >-> updateCacheC
     let eventProducer = fromInput eventInput
-    let seal = sealCache >> atomically eventSeal >> updateBar' bar
+    let seal = sealCache >> atomically eventSeal >> updateBarDefault' bar
     return (blockConsumer, eventProducer, seal)
     where
       attachHandlerP :: Output BlockEvent -> Text -> Pipe [BlockOutput] [BlockState] IO ()
@@ -133,11 +133,10 @@ instance IsStream BlockStream where
               prefixedName = prefix <> blockName'
 
       updateBarP :: Bar -> Pipe a a IO ()
-      updateBarP bar = do
+      updateBarP bar = forever $ do
         v <- await
         yield v
-        liftIO $ updateBar' bar
-        updateBarP bar
+        liftIO $ updateBarDefault' bar
 
 
 data Request = Command Command | StartStream StreamType

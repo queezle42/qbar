@@ -23,10 +23,12 @@ runPipeClient enableEvents mainOptions = do
   where
     -- |Special block that reads the processes stdin line-by-line and shows the latest line in the block. Must never be used in a 'server' process or when stdin/stdout is used in another way.
     pipeBlock :: Producer String BarIO () -> PushBlock
-    pipeBlock source = PushMode <$ source >-> PP.map stringToState
+    pipeBlock source = PushMode <$ source >-> pack
       where
-        stringToState :: String -> BlockState
-        stringToState = attachHandler . parseTags' . T.pack
+        pack :: Pipe String BlockUpdate BarIO ()
+        pack = forever $ do
+          value <- await
+          yield (attachHandler . parseTags' . T.pack $ value, DefaultUpdate)
         attachHandler :: BlockOutput -> BlockState
         attachHandler = if enableEvents then mkBlockState' pipeBlockName handler else mkBlockState
         handler :: BlockEventHandler

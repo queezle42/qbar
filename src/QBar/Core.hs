@@ -4,34 +4,24 @@
 module QBar.Core where
 
 import QBar.BlockOutput
-import QBar.TagParser
 import QBar.Time
 
 import Control.Concurrent.Async
 import Control.Concurrent.Event as Event
 import Control.Concurrent.MVar
 import Control.Concurrent.STM.TChan (TChan, writeTChan)
-import Control.Exception (IOException)
 import Control.Lens
 import Control.Monad.Reader (ReaderT, runReaderT, ask)
 import Control.Monad.State (StateT)
 import Control.Monad.Writer (WriterT)
 import Data.Aeson.TH
-import qualified Data.ByteString.Lazy.Char8 as C8
 import Data.Either (isRight)
 import Data.Int (Int64)
 import qualified Data.Text.Lazy as T
-import qualified Data.Text.Lazy.Encoding as E
-import qualified Data.Text.Lazy.IO as TIO
 import Pipes
 import Pipes.Concurrent
-import Pipes.Safe (SafeT, catchP, runSafeT)
+import Pipes.Safe (SafeT, runSafeT)
 import qualified Pipes.Prelude as PP
-import System.Exit
-import System.IO
-import System.Process.Typed (Process, shell, setStdin, setStdout,
-  getStdout, closed, createPipe, readProcessStdout, startProcess, stopProcess)
-
 
 data MainOptions = MainOptions {
   verbose :: Bool,
@@ -54,8 +44,10 @@ data CachedMode = CachedMode
 type BlockEventHandler = BlockEvent -> BarIO ()
 
 type BlockState = Maybe (BlockOutput, Maybe BlockEventHandler)
+data BlockUpdateReason = DefaultUpdate | PullUpdate | UserUpdate
+type BlockUpdate = (BlockState, BlockUpdateReason)
 
-type Block = Producer BlockState BarIO
+type Block = Producer BlockUpdate BarIO
 
 
 -- |Block that 'yield's an update whenever the block should be changed
@@ -90,7 +82,7 @@ exitCache = return CachedMode
 type BarIO = SafeT (ReaderT Bar IO)
 
 data Bar = Bar {
-  requestBarUpdate :: IO (),
+  requestBarUpdate :: BlockUpdateReason -> IO (),
   newBlockChan :: TChan BlockCache,
   barSleepScheduler :: SleepScheduler
 }
@@ -133,14 +125,14 @@ instance (MonadBlock m, Monoid a) => MonadBlock (WriterT a m) where
   liftBlock = lift . liftBlock
 
 updateBlock :: MonadBlock m => BlockOutput -> m ()
-updateBlock blockOutput = liftBlock . yield $ Just (blockOutput, Nothing)
+updateBlock blockOutput = liftBlock . yield $ (Just (blockOutput, Nothing), DefaultUpdate)
 
 updateBlock' :: MonadBlock m => BlockEventHandler -> BlockOutput -> m ()
-updateBlock' blockEventHandler blockOutput = liftBlock . yield $ Just (blockOutput, Just blockEventHandler)
+updateBlock' blockEventHandler blockOutput = liftBlock . yield $ (Just (blockOutput, Just blockEventHandler), DefaultUpdate)
 
 -- |Update a block by removing the current output
 updateBlockEmpty :: MonadBlock m => m ()
-updateBlockEmpty = liftBlock . yield $ Nothing
+updateBlockEmpty = liftBlock . yield $ (Nothing, DefaultUpdate)
 
 
 mkBlockState :: BlockOutput -> BlockState
@@ -162,8 +154,8 @@ invalidateBlockState Nothing = Nothing
 invalidateBlockState (Just (output, eventHandler)) = Just (invalidateBlock output, eventHandler)
 
 
-runBarIO :: Bar -> BarIO r -> IO r
-runBarIO bar action = runReaderT (runSafeT action) bar
+runBarIO :: MonadIO m => Bar -> BarIO r -> m r
+runBarIO bar action = liftIO $ runReaderT (runSafeT action) bar
 
 
 defaultInterval :: Interval
@@ -172,19 +164,19 @@ defaultInterval = everyNSeconds 10
 schedulePullBlock :: PullBlock -> PushBlock
 schedulePullBlock pullBlock = PushMode <$ pullBlock >-> sleepToNextInterval
   where
-    sleepToNextInterval :: Pipe BlockState BlockState BarIO PullMode
+    sleepToNextInterval :: Pipe BlockUpdate BlockUpdate BarIO PullMode
     sleepToNextInterval = do
       event <- liftIO Event.new
       forever $ do
-        state <- await
+        (state, _) <- await
         if hasEventHandler state
           then do
             -- If state already has an event handler, we do not attach another one
-            yield state
+            yield (state, PullUpdate)
             sleepUntilInterval defaultInterval
           else do
             -- Attach a click handler that will trigger a block update
-            yield $ updateEventHandler (triggerOnClick event) state
+            yield $ (updateEventHandler (triggerOnClick event) state, PullUpdate)
 
             scheduler <- askSleepScheduler
             result <- liftIO $ do
@@ -192,7 +184,7 @@ schedulePullBlock pullBlock = PushMode <$ pullBlock >-> sleepToNextInterval
               eventTask <- async $ Event.wait event
               waitEitherCancel timerTask eventTask
 
-            when (isRight result) $ yield $ invalidateBlockState state
+            when (isRight result) $ yield $ (invalidateBlockState state, UserUpdate)
 
     triggerOnClick :: Event -> BlockEvent -> BarIO ()
     triggerOnClick event _ = liftIO $ Event.signal event
@@ -252,23 +244,23 @@ cacheFromInput input = do
     Just value -> yield [value] >> cacheFromInput input
 
 
-modify :: (BlockOutput -> BlockOutput) -> Pipe BlockState BlockState BarIO r
-modify x = PP.map (over (_Just . _1) x)
+modify :: (BlockOutput -> BlockOutput) -> Pipe BlockUpdate BlockUpdate BarIO r
+modify x = PP.map (over (_1 . _Just . _1) x)
 
-autoPadding :: Pipe BlockState BlockState BarIO r
+autoPadding :: Pipe BlockUpdate BlockUpdate BarIO r
 autoPadding = autoPadding' 0 0
   where
-    autoPadding' :: Int64 -> Int64 -> Pipe BlockState BlockState BarIO r
+    autoPadding' :: Int64 -> Int64 -> Pipe BlockUpdate BlockUpdate BarIO r
     autoPadding' fullLength shortLength = do
       maybeBlock <- await
       case maybeBlock of
-        Just (block, eventHandler) -> do
+        (Just (block, eventHandler), reason) -> do
           let fullLength' = max fullLength . printedLength $ block^.fullText
           let shortLength' = max shortLength . printedLength $ block^.shortText._Just
-          yield $ Just (padFullText fullLength' . padShortText shortLength' $ block, eventHandler)
+          yield $ (Just (padFullText fullLength' . padShortText shortLength' $ block, eventHandler), reason)
           autoPadding' fullLength' shortLength'
-        Nothing -> do
-          yield Nothing
+        (Nothing, reason) -> do
+          yield (Nothing, reason)
           autoPadding' 0 0
     padString :: Int64 -> BlockText
     padString len = normalText . T.take len . T.repeat $ ' '
@@ -278,59 +270,22 @@ autoPadding = autoPadding' 0 0
     padShortText len = over (shortText._Just) $ \s -> padString (len - printedLength s) <> s
 
 
-blockScript :: FilePath -> PullBlock
-blockScript path = forever $ updateBlock =<< (lift blockScriptAction)
-  where
-    blockScriptAction :: BarIO BlockOutput
-    blockScriptAction = do
-      -- The exit code is used for i3blocks signaling but ignored here (=not implemented)
-      -- I am trying to replace i3blocks scripts with native haskell blocks, so I do not need it
-      (exitCode, output) <- liftIO $ readProcessStdout $ shell path
-      return $ case exitCode of
-        ExitSuccess -> createScriptBlock output
-        (ExitFailure nr) -> case nr of
-          _ -> mkErrorOutput $ "exit code " <> T.pack (show nr) <> ""
-    createScriptBlock :: C8.ByteString -> BlockOutput
-    createScriptBlock output = case map E.decodeUtf8 (C8.lines output) of
-      (text:short:_) -> parseTags'' text short
-      (text:_) -> parseTags' text
-      [] -> emptyBlock
-
-persistentBlockScript :: FilePath -> PushBlock
--- The outer catchP only catches errors that occur during process creation
-persistentBlockScript path = catchP startScriptProcess handleError
-  where
-    handleError :: IOException -> PushBlock
-    handleError e = do
-      updateBlock . mkErrorOutput $ T.pack (show e)
-      exitBlock
-    handleErrorWithProcess :: (Process i o e) -> IOException -> PushBlock
-    handleErrorWithProcess process e = do
-      stopProcess process
-      handleError e
-    startScriptProcess :: PushBlock
-    startScriptProcess = do
-      let processConfig = setStdin closed $ setStdout createPipe $ shell path
-      process <- startProcess processConfig
-      -- The inner catchP catches errors that happen after the process has been created
-      -- This handler will also make sure the process is stopped
-      catchP (blockFromHandle $ getStdout process) (handleErrorWithProcess process)
-    blockFromHandle :: Handle -> PushBlock
-    blockFromHandle handle = forever $ do
-      line <- liftIO $ TIO.hGetLine handle
-      updateBlock $ parseTags' line
-      lift updateBar
-
 addBlock :: IsCachable a => a -> BarIO ()
 addBlock block = do
   newBlockChan' <- newBlockChan <$> askBar
   liftIO $ atomically $ writeTChan newBlockChan' $ toCachedBlock block
 
-updateBar :: BarIO ()
-updateBar = liftIO =<< requestBarUpdate <$> askBar
+updateBar :: MonadBarIO m => BlockUpdateReason -> m ()
+updateBar reason = liftIO =<< requestBarUpdate <$> askBar <*> return reason
 
-updateBar' :: Bar -> IO ()
-updateBar' bar = runBarIO bar updateBar
+updateBar' :: MonadIO m => Bar -> BlockUpdateReason -> m ()
+updateBar' bar reason = runBarIO bar $ updateBar reason
+
+updateBarDefault :: MonadBarIO m => m ()
+updateBarDefault = updateBar DefaultUpdate
+
+updateBarDefault' :: MonadIO m => Bar -> m ()
+updateBarDefault' bar = updateBar' bar DefaultUpdate
 
 barAsync :: BarIO a -> BarIO (Async a)
 barAsync action = do
@@ -340,9 +295,10 @@ barAsync action = do
 cachePushBlock :: PushBlock -> BlockCache
 cachePushBlock pushBlock = lift (next pushBlock) >>= either (const exitCache) withInitialBlock
   where
-    withInitialBlock :: (BlockState, PushBlock) -> BlockCache
-    withInitialBlock (initialBlockOutput, pushBlock') = do
-      (output, input, seal) <- liftIO $ spawn' $ latest initialBlockOutput
+    withInitialBlock :: (BlockUpdate, PushBlock) -> BlockCache
+    withInitialBlock (initialBlockUpdate, pushBlock') = do
+      let (initialBlockState, _) = initialBlockUpdate
+      (output, input, seal) <- liftIO $ spawn' $ latest initialBlockState
       -- The async could be used to stop the block later, but for now we are just linking it to catch exceptions
       task <- lift $ barAsync (sendProducerToMailbox output seal pushBlock')
       liftIO $ link task
@@ -353,12 +309,15 @@ cachePushBlock pushBlock = lift (next pushBlock) >>= either (const exitCache) wi
       void $ runEffect $ for pushBlock' (sendOutputToMailbox output)
       -- Then clear the block and seal the mailbox
       liftIO $ atomically $ void $ send output Nothing
-      updateBar
+      -- TODO: pass reason from BlockUpdate
+      updateBarDefault
       -- TODO: sealing does prevent a 'latest' mailbox from being read
       liftIO $ atomically seal
-    sendOutputToMailbox :: Output BlockState -> BlockState -> Effect BarIO ()
-    sendOutputToMailbox output blockOutput = do
+    sendOutputToMailbox :: Output BlockState -> BlockUpdate -> Effect BarIO ()
+    sendOutputToMailbox output blockUpdate = do
+      let (state, _reason) = blockUpdate
       -- The void is discarding the boolean result that indicates if the mailbox is sealed
       -- This is ok because a cached block is never sealed from the receiving side
-      liftIO $ atomically $ void $ send output blockOutput
-      lift updateBar
+      liftIO $ atomically $ void $ send output state
+      -- TODO signal update reason to renderer
+      lift updateBarDefault

@@ -24,12 +24,12 @@ defaultBarConfig = do
 
 legacyBarConfig :: BarIO ()
 legacyBarConfig = do
-  let todo = blockScript $ blockLocation "todo"
-  let wifi = (blockScript $ blockLocation "wifi2") >-> modify (addIcon "📡\xFE0E")
-  let networkEnvironment = blockScript $ blockLocation "network-environment"
-  let ram = (blockScript $ blockLocation "memory") >-> modify (addIcon "🐏\xFE0E") >-> autoPadding
-  let temperature = (blockScript $ blockLocation "temperature") >-> autoPadding
-  let volumeBlock = persistentBlockScript $ blockLocation "volume-pulseaudio -S -F3"
+  let todo = scriptBlock $ blockLocation "todo"
+  let wifi = (scriptBlock $ blockLocation "wifi2") >-> modify (addIcon "📡\xFE0E")
+  let networkEnvironment = scriptBlock $ blockLocation "network-environment"
+  let ram = (scriptBlock $ blockLocation "memory") >-> modify (addIcon "🐏\xFE0E") >-> autoPadding
+  let temperature = (scriptBlock $ blockLocation "temperature") >-> autoPadding
+  let volumeBlock = persistentScriptBlock $ blockLocation "volume-pulseaudio -S -F3"
   let battery = batteryBlock >-> modify (blockName ?~ "battery")
   let cpuUsage = cpuUsageBlock 1 >-> modify ((blockName ?~ "cpuUsage") . addIcon "💻\xFE0E")
 

@@ -70,7 +70,8 @@ blockParser :: Parser (BarIO ())
 blockParser = subparser (
     commandGroup "Available blocks:" <>
     command "date" (info (pure $ addBlock dateBlock) (progDesc "Load the date and time block.")) <>
-    command "cpu" (info (pure $ addBlock $ cpuUsageBlock 1) (progDesc "Load the cpu usage block."))
+    command "cpu" (info (pure $ addBlock $ cpuUsageBlock 1) (progDesc "Load the cpu usage block.")) <>
+    command "script" (info scriptBlockParser (progDesc "Display the output of an external script as a block."))
   )
   <|>
   subparser (
@@ -79,3 +80,9 @@ blockParser = subparser (
     command "default" (info (pure defaultBarConfig) (progDesc "Load default set of blocks.")) <>
     command "legacy" (info (pure legacyBarConfig) (progDesc "Load the legacy configuration. Requires some custom block scripts."))
   )
+
+scriptBlockParser :: Parser (BarIO ())
+scriptBlockParser = helper <*> do
+  persistent <- switch $ long "persistent" <> short 'p' <> help "Run script in persistent mode (every line of output updates the block)."
+  script <- strArgument (metavar "SCRIPT" <> help "The script that will be executed with a shell.")
+  return $ (if persistent then addBlock . scriptBlock else addBlock . persistentScriptBlock) script
