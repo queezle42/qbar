@@ -7,7 +7,6 @@ module QBar.Blocks.Battery where
 import QBar.Core
 import QBar.Blocks.Utils
 import QBar.BlockOutput
-import Pipes
 
 import qualified Data.Text.Lazy as T
 import qualified Data.Text.Lazy.IO as TIO
@@ -75,7 +74,7 @@ batteryBlock = forever $ do
 
 
 updateBatteryBlock :: Bool -> [BatteryState] -> Block ()
-updateBatteryBlock _ [] = yield Nothing
+updateBatteryBlock _ [] = updateBlockEmpty
 updateBatteryBlock isPlugged bs = updateBlock $ (shortText.~shortText') $ mkBlockOutput fullText'
   where
     fullText' :: BlockText

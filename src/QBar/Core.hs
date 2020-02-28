@@ -138,6 +138,10 @@ updateBlock blockOutput = liftBlock . yield $ Just (blockOutput, Nothing)
 updateBlock' :: MonadBlock m => BlockEventHandler -> BlockOutput -> m ()
 updateBlock' blockEventHandler blockOutput = liftBlock . yield $ Just (blockOutput, Just blockEventHandler)
 
+-- |Update a block by removing the current output
+updateBlockEmpty :: MonadBlock m => m ()
+updateBlockEmpty = liftBlock . yield $ Nothing
+
 
 mkBlockState :: BlockOutput -> BlockState
 mkBlockState blockOutput = Just (blockOutput, Nothing)
