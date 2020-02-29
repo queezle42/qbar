@@ -64,7 +64,7 @@ class IsCachable a where
 instance IsCachable PushBlock where
   toCachedBlock = cachePushBlock
 instance IsCachable PullBlock where
-  toCachedBlock = toCachedBlock . schedulePullBlock
+  toCachedBlock = cachePushBlock . schedulePullBlock
 instance IsCachable BlockCache where
   toCachedBlock = id
 
