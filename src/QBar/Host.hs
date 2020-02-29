@@ -8,7 +8,8 @@ import QBar.Core
 import QBar.Time
 
 import Control.Concurrent (forkIO, forkFinally, threadDelay)
-import Control.Concurrent.Event as Event
+import Control.Concurrent.Async (async, wait)
+import qualified Control.Concurrent.Event as Event
 import Control.Concurrent.MVar (MVar, newMVar, modifyMVar_, swapMVar)
 import Control.Concurrent.STM.TChan (TChan, newTChanIO, tryReadTChan)
 import Control.Exception (SomeException, catch)
@@ -23,6 +24,7 @@ import System.Posix.Signals
 
 data HostHandle = HostHandle {
   barUpdateEvent :: BarUpdateEvent,
+  barUpdatedEvent :: Event.Event,
   followupEventWaitTimeMVar :: MVar Int,
   newBlockChan :: TChan BlockCache,
   eventHandlerListIORef :: IORef [(T.Text, BlockEventHandler)]
@@ -53,7 +55,7 @@ eventDispatcher bar eventHandlerListIORef = eventDispatcher'
 
 
 runBlocks :: Bar -> HostHandle -> Producer [BlockOutput] IO ()
-runBlocks bar HostHandle{barUpdateEvent, followupEventWaitTimeMVar, newBlockChan, eventHandlerListIORef} = runBlocks' []
+runBlocks bar HostHandle{barUpdateEvent, barUpdatedEvent, followupEventWaitTimeMVar, newBlockChan, eventHandlerListIORef} = runBlocks' []
   where
     runBlocks' :: [BlockCache] -> Producer [BlockOutput] IO ()
     runBlocks' blocks = do
@@ -76,6 +78,8 @@ runBlocks bar HostHandle{barUpdateEvent, followupEventWaitTimeMVar, newBlockChan
 
       -- Register new event handlers immediately after rendering
       liftIO $ updateEventHandlers blockStates
+
+      liftIO $ Event.signal barUpdatedEvent
 
       -- Wait for 50ms after rendering a line to limit cpu load of rapid events
       liftIO $ threadDelay 50000
@@ -139,15 +143,27 @@ followupEventWaitTimeDefault :: Int
 followupEventWaitTimeDefault = followupEventWaitTime PullUpdate
 
 requestBarUpdateHandler :: HostHandle -> BlockUpdateReason -> IO ()
-requestBarUpdateHandler HostHandle{barUpdateEvent, followupEventWaitTimeMVar} blockUpdateReason = do
+requestBarUpdateHandler HostHandle{barUpdateEvent, barUpdatedEvent, followupEventWaitTimeMVar} blockUpdateReason = do
+  -- Configure followup event wait time
   modifyMVar_ followupEventWaitTimeMVar $ \current -> return $ min current $ followupEventWaitTime blockUpdateReason
-  Event.set barUpdateEvent
+  signalHost blockUpdateReason
+  where
+    signalHost :: BlockUpdateReason -> IO ()
+    signalHost UserUpdate = do
+      -- Start waiting before triggering the event cannot be missed
+      task <- async $ Event.wait barUpdatedEvent
+      Event.set barUpdateEvent
+      -- Wait until the bar is updated. This happens almost immediately, but this ensures the block won't immediately override user feedback.
+      wait task
+    signalHost _ = Event.set barUpdateEvent
 
 
 runBarHost :: BarIO (Consumer [BlockOutput] IO (), Producer BlockEvent IO ()) -> BarIO () -> IO ()
 runBarHost createHost loadBlocks = do
-  -- Create an event used to signal bar updates
+  -- Create an event used request bar updates
   barUpdateEvent <- Event.newSet
+  -- Create an event that is signaled after bar updates
+  barUpdatedEvent <- Event.new
   followupEventWaitTimeMVar <- newMVar 0
 
   -- Create channel to send new block producers to render loop
@@ -160,6 +176,7 @@ runBarHost createHost loadBlocks = do
 
   let hostHandle = HostHandle {
     barUpdateEvent,
+    barUpdatedEvent,
     followupEventWaitTimeMVar,
     newBlockChan,
     eventHandlerListIORef
