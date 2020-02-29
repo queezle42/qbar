@@ -64,7 +64,7 @@ runBlocks bar HostHandle{barUpdateEvent, followupEventWaitTimeMVar, newBlockChan
       followupEventWaitTime' <- liftIO $ swapMVar followupEventWaitTimeMVar followupEventWaitTimeDefault
 
       -- Wait for a moment (determined by block update reason) after the first event to catch (almost-)simultaneous block updates
-      liftIO $ threadDelay followupEventWaitTime'
+      when (followupEventWaitTime' > 0) $ liftIO $ threadDelay followupEventWaitTime'
       liftIO $ Event.clear barUpdateEvent
 
       blocks' <- runBarIO bar $ addNewBlocks blocks
