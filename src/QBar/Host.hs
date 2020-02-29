@@ -81,8 +81,8 @@ runBlocks bar HostHandle{barUpdateEvent, barUpdatedEvent, followupEventWaitTimeM
 
       liftIO $ Event.signal barUpdatedEvent
 
-      -- Wait for 50ms after rendering a line to limit cpu load of rapid events
-      liftIO $ threadDelay 50000
+      -- Wait for 20ms after rendering a line to limit cpu load of rapid events
+      liftIO $ threadDelay 20000
 
       -- Loop
       runBlocks' blocks''
