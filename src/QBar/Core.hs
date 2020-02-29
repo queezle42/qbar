@@ -150,8 +150,7 @@ hasEventHandler (Just (_, Just _)) = True
 hasEventHandler _ = False
 
 invalidateBlockState :: BlockState -> BlockState
-invalidateBlockState Nothing = Nothing
-invalidateBlockState (Just (output, eventHandler)) = Just (invalidateBlock output, eventHandler)
+invalidateBlockState = (_Just . _1) %~ invalidateBlock
 
 
 runBarIO :: MonadIO m => Bar -> BarIO r -> m r
