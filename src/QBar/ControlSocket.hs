@@ -133,10 +133,7 @@ instance IsStream BlockStream where
               prefixedName = prefix <> blockName'
 
       updateBarP :: Bar -> Pipe a a IO ()
-      updateBarP bar = forever $ do
-        v <- await
-        yield v
-        liftIO $ updateBarDefault' bar
+      updateBarP bar = forever $ await >>= yield >> liftIO (updateBarDefault' bar)
 
 
 data Request = Command Command | StartStream StreamType
