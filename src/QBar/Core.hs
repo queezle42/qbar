@@ -5,6 +5,7 @@ module QBar.Core where
 
 import QBar.BlockOutput
 import QBar.Time
+import QBar.Util
 
 import Control.Concurrent.Async
 import Control.Concurrent.Event as Event
@@ -17,6 +18,7 @@ import Control.Monad.Writer (WriterT)
 import Data.Aeson.TH
 import Data.Either (isRight)
 import Data.Int (Int64)
+import Data.Maybe (fromMaybe)
 import qualified Data.Text.Lazy as T
 import Pipes
 import Pipes.Concurrent
@@ -242,13 +244,24 @@ newCache'' = do
 
 -- |Creates a cache from a push block.
 cachePushBlock :: PushBlock -> BlockCache
-cachePushBlock pushBlock = newCache $ () <$ (pushBlock >-> updateBarP)
+cachePushBlock pushBlock = newCache $ () <$ (pushBlock >-> updateBarP >-> fixBlockName >-> PP.map (\a -> [a]))
   where
-    updateBarP :: Pipe BlockUpdate [BlockState] BarIO PushMode
+    updateBarP :: Pipe BlockUpdate BlockState BarIO r
     updateBarP = forever $ do
       (state, reason) <- await
-      yield [state]
+      yield state
       updateBar reason
+
+    -- |Sets 'blockName' to a random (but static) identifier if an event handler is set but the 'blockName' is not set.
+    fixBlockName :: Pipe BlockState BlockState BarIO r
+    fixBlockName = do
+      defaultBlockName <- randomIdentifier
+      forever $ do
+        state <- await
+        yield $ if hasEventHandler state
+          then (_Just . _1 . blockName) %~ (Just . fromMaybe defaultBlockName) $ state
+          else state
+
 
 
 modify :: (BlockOutput -> BlockOutput) -> Pipe BlockUpdate BlockUpdate BarIO r

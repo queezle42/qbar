@@ -6,16 +6,13 @@ import QBar.Core
 
 import Pipes
 
-import Control.Lens
-
 defaultBarConfig :: BarIO ()
 defaultBarConfig = do
-  let battery = batteryBlock >-> modify (blockName ?~ "battery")
-  let cpuUsage = cpuUsageBlock 1 >-> modify ((blockName ?~ "cpuUsage") . addIcon "💻\xFE0E")
+  let cpuUsage = cpuUsageBlock 1 >-> modify (addIcon "💻\xFE0E")
 
   -- TODO: commented-out blocks should be added as soon as they are implemented in qbar
   addBlock dateBlock
-  addBlock battery
+  addBlock batteryBlock
   --addBlock volumeBlock
   addBlock cpuUsage
   --addBlock ramUsageBlock
@@ -30,11 +27,10 @@ legacyBarConfig = do
   let ram = (scriptBlock $ blockLocation "memory") >-> modify (addIcon "🐏\xFE0E") >-> autoPadding
   let temperature = (scriptBlock $ blockLocation "temperature") >-> autoPadding
   let volumeBlock = persistentScriptBlock $ blockLocation "volume-pulseaudio -S -F3"
-  let battery = batteryBlock >-> modify (blockName ?~ "battery")
-  let cpuUsage = cpuUsageBlock 1 >-> modify ((blockName ?~ "cpuUsage") . addIcon "💻\xFE0E")
+  let cpuUsage = cpuUsageBlock 1 >-> modify (addIcon "💻\xFE0E")
 
   addBlock dateBlock
-  addBlock battery
+  addBlock batteryBlock
   addBlock volumeBlock
   addBlock temperature
   addBlock ram
