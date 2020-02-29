@@ -85,4 +85,4 @@ scriptBlockParser :: Parser (BarIO ())
 scriptBlockParser = helper <*> do
   persistent <- switch $ long "persistent" <> short 'p' <> help "Run script in persistent mode (every line of output updates the block)."
   script <- strArgument (metavar "SCRIPT" <> help "The script that will be executed with a shell.")
-  return $ (if persistent then addBlock . scriptBlock else addBlock . persistentScriptBlock) script
+  return $ (if persistent then addBlock . persistentScriptBlock else addBlock . scriptBlock) script

@@ -26,11 +26,11 @@ scriptBlock path = forever $ updateBlock =<< (lift blockScriptAction)
       -- I am trying to replace i3blocks scripts with native haskell blocks, so I do not need it
       (exitCode, output) <- liftIO $ readProcessStdout $ shell path
       return $ case exitCode of
-        ExitSuccess -> createScriptBlock output
+        ExitSuccess -> createScriptBlockOutput output
         (ExitFailure nr) -> case nr of
           _ -> mkErrorOutput $ "exit code " <> T.pack (show nr) <> ""
-    createScriptBlock :: C8.ByteString -> BlockOutput
-    createScriptBlock output = case map E.decodeUtf8 (C8.lines output) of
+    createScriptBlockOutput :: C8.ByteString -> BlockOutput
+    createScriptBlockOutput output = case map E.decodeUtf8 (C8.lines output) of
       (text:short:_) -> parseTags'' text short
       (text:_) -> parseTags' text
       [] -> emptyBlock
