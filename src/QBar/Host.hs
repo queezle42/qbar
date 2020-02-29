@@ -63,7 +63,7 @@ runBlocks bar HostHandle{barUpdateEvent, followupEventWaitTimeMVar, newBlockChan
       -- Get current value and reset to default value
       followupEventWaitTime' <- liftIO $ swapMVar followupEventWaitTimeMVar followupEventWaitTimeDefault
 
-        -- Wait for 10ms after first events to catch (almost-)simultaneous event updates
+      -- Wait for a moment (determined by block update reason) after the first event to catch (almost-)simultaneous block updates
       liftIO $ threadDelay followupEventWaitTime'
       liftIO $ Event.clear barUpdateEvent
 
@@ -77,8 +77,8 @@ runBlocks bar HostHandle{barUpdateEvent, followupEventWaitTimeMVar, newBlockChan
       -- Register new event handlers immediately after rendering
       liftIO $ updateEventHandlers blockStates
 
-      -- Wait for 100ms after rendering a line to limit cpu load of rapid events
-      liftIO $ threadDelay 100000
+      -- Wait for 50ms after rendering a line to limit cpu load of rapid events
+      liftIO $ threadDelay 50000
 
       -- Loop
       runBlocks' blocks''
