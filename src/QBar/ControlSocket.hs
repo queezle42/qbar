@@ -213,8 +213,7 @@ listenUnixSocket options@MainOptions{verbose} bar commandHandler = do
   socketExists <- doesFileExist socketPath
   when socketExists $ removeFile socketPath
   sock <- socket AF_UNIX Stream defaultProtocol
-  -- TODO: unsafe probably not what we want
-  setCloseOnExecIfNeeded =<< unsafeFdSocket sock
+  withFdSocket sock setCloseOnExecIfNeeded
   bind sock (SockAddrUnix socketPath)
   listen sock 5
   forever $ do
