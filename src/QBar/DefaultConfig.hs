@@ -8,13 +8,11 @@ import Pipes
 
 defaultBarConfig :: BarIO ()
 defaultBarConfig = do
-  let cpuUsage = cpuUsageBlock 1 >-> modify (addIcon "💻\xFE0E")
-
   -- TODO: commented-out blocks should be added as soon as they are implemented in qbar
   addBlock dateBlock
   addBlock batteryBlock
   --addBlock volumeBlock
-  addBlock cpuUsage
+  addBlock $ cpuUsageBlock 1
   --addBlock ramUsageBlock
   --addBlock cpuTemperatureBlock
   --addBlock networkBlock
@@ -27,14 +25,13 @@ legacyBarConfig = do
   let ram = (scriptBlock $ blockLocation "memory") >-> modify (addIcon "🐏\xFE0E") >-> autoPadding
   let temperature = (scriptBlock $ blockLocation "temperature") >-> autoPadding
   let volumeBlock = persistentScriptBlock $ blockLocation "volume-pulseaudio -S -F3"
-  let cpuUsage = cpuUsageBlock 1 >-> modify (addIcon "💻\xFE0E")
 
   addBlock dateBlock
   addBlock batteryBlock
   addBlock volumeBlock
   addBlock temperature
   addBlock ram
-  addBlock cpuUsage
+  addBlock $ cpuUsageBlock 1
   addBlock networkEnvironment
   addBlock wifi
   addBlock todo
