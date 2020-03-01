@@ -64,18 +64,20 @@ barConfigurationParser = do
   pure $ sequence_ blocks
 
 blockParser :: Parser (BarIO ())
-blockParser = subparser (
-    commandGroup "Available blocks:" <>
-    command "date" (info (pure $ addBlock dateBlock) (progDesc "Load the date and time block.")) <>
-    command "cpu" (info (pure $ addBlock $ cpuUsageBlock 1) (progDesc "Load the cpu usage block.")) <>
-    command "script" (info scriptBlockParser (progDesc "Display the output of an external script as a block."))
+blockParser =
+  subparser (
+    commandGroup "Available presets:" <>
+    metavar "CONFIG..." <>
+    command "default" (info (pure defaultBarConfig) (progDesc "Load default set of blocks.")) <>
+    command "legacy" (info (pure legacyBarConfig) (progDesc "Load the legacy configuration. Requires some custom block scripts."))
   )
   <|>
   subparser (
+    commandGroup "Available blocks:" <>
     hidden <>
-    commandGroup "Available presets:" <>
-    command "default" (info (pure defaultBarConfig) (progDesc "Load default set of blocks.")) <>
-    command "legacy" (info (pure legacyBarConfig) (progDesc "Load the legacy configuration. Requires some custom block scripts."))
+    command "date" (info (pure $ addBlock dateBlock) (progDesc "Load the date and time block.")) <>
+    command "cpu" (info (pure $ addBlock $ cpuUsageBlock 1) (progDesc "Load the cpu usage block.")) <>
+    command "script" (info scriptBlockParser (progDesc "Display the output of an external script as a block."))
   )
 
 scriptBlockParser :: Parser (BarIO ())
