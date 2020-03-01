@@ -14,7 +14,7 @@ stack build
 You can also use the scripts in the `bin`-directory (all scripts will rebuild the project if required):
 ```
 # Launch as swaybar status command while redirecting stderr to shell
-./bin/run-sway
+./bin/run-sway default
 
 # Run the binary directly (mostly used to control the bar via rpc)
 ./bin/run --help

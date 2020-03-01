@@ -60,11 +60,8 @@ pipeClientParser = do
 
 barConfigurationParser :: Parser (BarIO ())
 barConfigurationParser = do
-  blocks <- many blockParser
-  pure $ case blocks of
-    -- Load default config if no blocks are selected on the command line
-    [] -> defaultBarConfig
-    l -> sequence_ l
+  blocks <- some blockParser
+  pure $ sequence_ blocks
 
 blockParser :: Parser (BarIO ())
 blockParser = subparser (
