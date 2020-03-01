@@ -164,7 +164,11 @@ defaultInterval = everyNSeconds 10
 
 -- |Converts a 'PullBlock' to a 'PushBlock' by running it whenever the 'defaultInterval' is triggered.
 schedulePullBlock :: PullBlock -> PushBlock
-schedulePullBlock pullBlock = PushMode <$ pullBlock >-> sleepToNextInterval
+schedulePullBlock = schedulePullBlock' defaultInterval
+
+-- |Converts a 'PullBlock' to a 'PushBlock' by running it whenever the 'defaultInterval' is triggered.
+schedulePullBlock' :: Interval -> PullBlock -> PushBlock
+schedulePullBlock' interval pullBlock = PushMode <$ pullBlock >-> sleepToNextInterval
   where
     sleepToNextInterval :: Pipe BlockUpdate BlockUpdate BarIO PullMode
     sleepToNextInterval = do
@@ -175,10 +179,10 @@ schedulePullBlock pullBlock = PushMode <$ pullBlock >-> sleepToNextInterval
           then do
             -- If state already has an event handler, we do not attach another one
             yield (state, PullUpdate)
-            sleepUntilInterval defaultInterval
+            sleepUntilInterval interval
           else do
             -- Attach a click handler that will trigger a block update
-            yield $ (updateEventHandler (triggerOnClick event) state, PullUpdate)
+            yield (updateEventHandler (triggerOnClick event) state, PullUpdate)
 
             scheduler <- askSleepScheduler
             result <- liftIO $ do
@@ -186,10 +190,12 @@ schedulePullBlock pullBlock = PushMode <$ pullBlock >-> sleepToNextInterval
               eventTask <- async $ Event.wait event
               waitEitherCancel timerTask eventTask
 
-            when (isRight result) $ yield $ (invalidateBlockState state, UserUpdate)
+            when (isRight result) $ do
+              liftIO $ Event.clear event
+              yield (invalidateBlockState state, UserUpdate)
 
     triggerOnClick :: Event -> BlockEvent -> BarIO ()
-    triggerOnClick event _ = liftIO $ Event.signal event
+    triggerOnClick event _ = liftIO $ Event.set event
 
 -- |Creates a new cache from a producer that automatically seals itself when the producer terminates.
 newCache :: Producer [BlockState] BarIO () -> BlockCache
