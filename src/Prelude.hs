@@ -23,6 +23,9 @@ module Prelude
     traceShowId,
     traceM,
     traceShowM,
+    traceIO,
+    traceShowIO,
+    traceShowIdIO,
     undefined,
   )
 where
@@ -82,6 +85,18 @@ traceM = Trace.traceM
 {-# DEPRECATED traceShowM "Partitial Function." #-}
 traceShowM :: (Show a, Applicative m) => a -> m ()
 traceShowM = Trace.traceShowM
+
+{-# DEPRECATED traceIO "Partitial Function." #-}
+traceIO :: Control.Monad.IO.Class.MonadIO m => String -> m ()
+traceIO = Control.Monad.IO.Class.liftIO . Trace.traceIO
+
+{-# DEPRECATED traceShowIO "Partitial Function." #-}
+traceShowIO :: (Control.Monad.IO.Class.MonadIO m, Show a) => a -> m ()
+traceShowIO = traceIO . show
+
+{-# DEPRECATED traceShowIdIO "Partitial Function." #-}
+traceShowIdIO :: (Control.Monad.IO.Class.MonadIO m, Show a) => a -> m a
+traceShowIdIO a = traceShowIO a >> return a
 
 intercalate :: Monoid a => a -> [a] -> a
 intercalate _ [] = mempty
