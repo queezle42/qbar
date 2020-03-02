@@ -19,13 +19,13 @@ ensure f a
   | f a = Just a
   | otherwise = Nothing
 
-tryMaybe :: IO a -> IO (Maybe a)
+tryMaybe :: MonadIO m => IO a -> m (Maybe a)
 tryMaybe a = tryMaybe' (Just <$> a)
 
-tryMaybe' :: IO (Maybe a) -> IO (Maybe a)
-tryMaybe' a = catch a $ \(_ :: SomeException) -> return Nothing
+tryMaybe' :: MonadIO m => IO (Maybe a) -> m (Maybe a)
+tryMaybe' a = liftIO . catch a $ \(_ :: SomeException) -> return Nothing
 
-parseFile :: FilePath -> AT.Parser a -> IO (Maybe a)
+parseFile :: MonadIO m => FilePath -> AT.Parser a -> m (Maybe a)
 parseFile path parser = tryMaybe' $ do
   fileContents <- TIO.readFile path
   return . AT.maybeResult $ AT.parse parser fileContents
