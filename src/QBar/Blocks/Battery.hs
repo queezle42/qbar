@@ -109,7 +109,7 @@ updateBatteryBlock isPlugged bs = updateBlock $ (shortText.~shortText') $ mkBloc
     overallPercentage = mkText (not isPlugged) (batteryImportance bs) $ batteryIcon <> " " <> (formatFloatN 0 . batteryPercentage $ bs) <> "%"
 
     optionalOverallEstimate :: BlockText
-    optionalOverallEstimate = maybe mempty (\s -> surroundWith normalText " (" ")" s) . batteryEstimateFormated $ bs
+    optionalOverallEstimate = maybe mempty (surroundWith normalText " (" ")") . batteryEstimateFormated $ bs
 
 
 batteryImportance :: [BatteryState] -> Importance
