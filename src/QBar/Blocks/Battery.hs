@@ -78,10 +78,10 @@ updateBatteryBlock _ [] = updateBlockEmpty
 updateBatteryBlock isPlugged bs = updateBlock $ (shortText.~shortText') $ mkBlockOutput fullText'
   where
     fullText' :: BlockText
-    fullText' = normalText (batteryIcon <> " ") <> overallPercentage <> optionalEachBattery <> optionalOverallEstimate
+    fullText' = overallPercentage <> optionalEachBattery <> optionalOverallEstimate
 
     shortText' :: Maybe BlockText
-    shortText' = Just $ normalText (batteryIcon <> " ") <> overallPercentage
+    shortText' = Just overallPercentage
 
     batteryIcon :: T.Text
     batteryIcon
@@ -106,7 +106,7 @@ updateBatteryBlock isPlugged bs = updateBlock $ (shortText.~shortText') $ mkBloc
     perSingleBattery b = importantText (batteryImportance [b]) $ perSingleBatteryArrow b <> (formatFloatN 0 . batteryPercentage) [b] <> "%"
 
     overallPercentage :: BlockText
-    overallPercentage = mkText (not isPlugged) (batteryImportance bs) $ (formatFloatN 0 . batteryPercentage $ bs) <> "%"
+    overallPercentage = mkText (not isPlugged) (batteryImportance bs) $ batteryIcon <> " " <> (formatFloatN 0 . batteryPercentage $ bs) <> "%"
 
     optionalOverallEstimate :: BlockText
     optionalOverallEstimate = maybe mempty (\s -> surroundWith normalText " (" ")" s) . batteryEstimateFormated $ bs
