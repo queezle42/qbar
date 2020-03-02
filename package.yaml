@@ -27,6 +27,8 @@ dependencies:
 - bytestring
 - colour
 - concurrent-extra
+- containers
+- dbus
 - directory
 - filepath
 - lens

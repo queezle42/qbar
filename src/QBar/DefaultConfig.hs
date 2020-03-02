@@ -15,12 +15,11 @@ defaultBarConfig = do
   addBlock $ cpuUsageBlock 1
   --addBlock ramUsageBlock
   --addBlock cpuTemperatureBlock
-  --addBlock networkBlock
+  addBlock networkManagerBlock
 
 legacyBarConfig :: BarIO ()
 legacyBarConfig = do
   let todo = pollScriptBlock $ blockLocation "todo"
-  let wifi = (pollScriptBlock $ blockLocation "wifi2") >-> modify (addIcon "📡\xFE0E")
   let networkEnvironment = pollScriptBlock $ blockLocation "network-environment"
   let ram = (pollScriptBlock $ blockLocation "memory") >-> modify (addIcon "🐏\xFE0E") >-> autoPadding
   let temperature = (pollScriptBlock $ blockLocation "temperature") >-> autoPadding
@@ -33,7 +32,7 @@ legacyBarConfig = do
   addBlock ram
   addBlock $ cpuUsageBlock 1
   addBlock networkEnvironment
-  addBlock wifi
+  addBlock networkManagerBlock
   addBlock todo
   where
     blockLocation :: String -> FilePath
