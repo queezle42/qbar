@@ -250,7 +250,7 @@ newCache'' = do
 
 -- |Creates a cache from a push block.
 cachePushBlock :: PushBlock -> BlockCache
-cachePushBlock pushBlock = newCache $ () <$ (pushBlock >-> updateBarP >-> fixBlockName >-> PP.map (\a -> [a]))
+cachePushBlock pushBlock = newCache $ () <$ (pushBlock >-> updateBarP >-> addBlockName >-> PP.map (\a -> [a]))
   where
     updateBarP :: Pipe BlockUpdate BlockState BarIO r
     updateBarP = forever $ do
@@ -259,15 +259,12 @@ cachePushBlock pushBlock = newCache $ () <$ (pushBlock >-> updateBarP >-> fixBlo
       updateBar reason
 
     -- |Sets 'blockName' to a random (but static) identifier if an event handler is set but the 'blockName' is not set.
-    fixBlockName :: Pipe BlockState BlockState BarIO r
-    fixBlockName = do
+    addBlockName :: Pipe BlockState BlockState BarIO r
+    addBlockName = do
       defaultBlockName <- randomIdentifier
       forever $ do
         state <- await
-        yield $ if hasEventHandler state
-          then (_Just . _1 . blockName) %~ (Just . fromMaybe defaultBlockName) $ state
-          else state
-
+        yield $ (_Just . _1 . blockName) %~ (Just . fromMaybe defaultBlockName) $ state
 
 
 modify :: (BlockOutput -> BlockOutput) -> Pipe BlockUpdate BlockUpdate BarIO r
@@ -294,7 +291,6 @@ autoPadding = autoPadding' 0 0
     padFullText len = over fullText $ \s -> padString (len - printedLength s) <> s
     padShortText :: Int64 -> BlockOutput -> BlockOutput
     padShortText len = over (shortText._Just) $ \s -> padString (len - printedLength s) <> s
-
 
 addBlock :: IsCachable a => a -> BarIO ()
 addBlock block = do
