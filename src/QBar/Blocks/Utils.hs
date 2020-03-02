@@ -2,7 +2,7 @@
 
 module QBar.Blocks.Utils where
 
-import Control.Exception (IOException, catch)
+import Control.Exception (SomeException, catch)
 import qualified Data.Attoparsec.Text.Lazy as AT
 import qualified Data.Text.Lazy as T
 import qualified Data.Text.Lazy.IO as TIO
@@ -23,7 +23,7 @@ tryMaybe :: IO a -> IO (Maybe a)
 tryMaybe a = tryMaybe' (Just <$> a)
 
 tryMaybe' :: IO (Maybe a) -> IO (Maybe a)
-tryMaybe' a = catch a (\(_ :: IOException) -> return Nothing)
+tryMaybe' a = catch a $ \(_ :: SomeException) -> return Nothing
 
 parseFile :: FilePath -> AT.Parser a -> IO (Maybe a)
 parseFile path parser = tryMaybe' $ do
