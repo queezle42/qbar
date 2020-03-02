@@ -23,7 +23,7 @@ module Prelude
     traceShowId,
     traceM,
     traceShowM,
-    undefined
+    undefined,
   )
 where
 
@@ -86,4 +86,4 @@ traceShowM = Trace.traceShowM
 intercalate :: Monoid a => a -> [a] -> a
 intercalate _ [] = mempty
 intercalate _ [x] = x
-intercalate inter (x:xs) = x <> inter <> intercalate inter xs
+intercalate inter (x : xs) = x <> inter <> intercalate inter xs
