@@ -1,3 +1,4 @@
+{-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 
@@ -13,7 +14,6 @@ import qualified Data.Text.Lazy.IO as TIO
 
 import System.Directory
 import Data.Maybe
-import Text.Read (readMaybe)
 
 import Control.Lens
 
@@ -31,23 +31,51 @@ data BatteryState = BatteryState
 
 
 getBatteryState :: FilePath -> IO (Maybe BatteryState)
-getBatteryState path = tryMaybe $ do
-  status' <- TIO.readFile (path <> "/status")
-  powerNow' <- tryMaybe $ TIO.readFile (path <> "/power_now")
-  energyNow' <- readIO =<< readFile (path <> "/energy_now")
-  energyFull' <- readIO =<< readFile (path <> "/energy_full")
-  return BatteryState
-    { _status = batteryStatus . T.strip $ status'
-    , _powerNow = readMaybe . T.unpack =<< powerNow'
-    , _energyNow = energyNow'
-    , _energyFull = energyFull'
-    }
+getBatteryState path = maybe getBatteryStateCharge (return . Just) =<< getBatteryStateEnergy
   where
-    batteryStatus :: T.Text -> BatteryStatus
-    batteryStatus statusText
-      | statusText == "Charging" = BatteryCharging
-      | statusText == "Discharging" = BatteryDischarging
-      | otherwise = BatteryOther
+    getVoltage :: IO Double
+    getVoltage = readIO =<< readFile (path <> "/voltage_now")
+    getBatteryStateEnergy :: IO (Maybe BatteryState)
+    getBatteryStateEnergy = tryMaybe $ do
+      status' <- batteryStatus
+      energyNow' <- readIO =<< readFile (path <> "/energy_now")
+      energyFull' <- readIO =<< readFile (path <> "/energy_full")
+      powerNow' <- batteryPower getVoltage
+      return BatteryState
+        { _status = status'
+        , _powerNow = powerNow'
+        , _energyNow = energyNow'
+        , _energyFull = energyFull'
+        }
+    getBatteryStateCharge :: IO (Maybe BatteryState)
+    getBatteryStateCharge = tryMaybe $ do
+      status' <- batteryStatus
+      voltageNow' <- getVoltage
+      powerNow' <- batteryPower (return voltageNow')
+      chargeNow' <- readIO =<< readFile (path <> "/charge_now")
+      chargeFull' <- readIO =<< readFile (path <> "/charge_full")
+      return BatteryState
+        { _status = status'
+        , _powerNow = powerNow'
+        , _energyNow = round $ voltageNow' * chargeNow' / 1000000
+        , _energyFull = round $ voltageNow' * chargeFull' / 1000000
+        }
+    batteryPower :: IO Double -> IO (Maybe Int)
+    batteryPower getVoltage' = do
+      power' <- tryMaybe $ readIO =<< readFile (path <> "/power_now")
+      case power' of
+        power@(Just _) -> return power
+        Nothing -> tryMaybe $ do
+          current <- readIO =<< readFile (path <> "/current_now")
+          voltage <- getVoltage'
+          return $ round $ voltage * current / 1000000
+    batteryStatus :: IO BatteryStatus
+    batteryStatus = do
+      statusText <- tryMaybe $ T.strip <$> TIO.readFile (path <> "/status")
+      return $ if
+        | statusText == Just "Charging" -> BatteryCharging
+        | statusText == Just "Discharging" -> BatteryDischarging
+        | otherwise -> BatteryOther
 
 
 batteryBlock :: PullBlock
