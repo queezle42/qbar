@@ -3,6 +3,8 @@
 module Prelude
   ( module BasePrelude,
     ByteString.ByteString,
+    (>=>),
+    (<=<),
     Control.Monad.forever,
     Control.Monad.unless,
     Control.Monad.void,
@@ -33,6 +35,7 @@ import BasePrelude hiding
   )
 import qualified BasePrelude as P
 import qualified Control.Monad
+import Control.Monad ((>=>), (<=<))
 import qualified Control.Monad.IO.Class
 import qualified Data.ByteString as ByteString
 import qualified Data.Maybe as Maybe
