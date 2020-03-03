@@ -7,7 +7,7 @@ import QBar.BlockOutput
 import QBar.Core
 import QBar.Time
 
-import Control.Concurrent (forkIO, forkFinally, threadDelay)
+import Control.Concurrent (ThreadId, forkIO, forkFinally, threadDelay, myThreadId, throwTo)
 import Control.Concurrent.Async (async, wait)
 import qualified Control.Concurrent.Event as Event
 import Control.Concurrent.MVar (MVar, newMVar, modifyMVar_, swapMVar)
@@ -19,8 +19,11 @@ import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import Data.Maybe (catMaybes, mapMaybe)
 import qualified Data.Text.Lazy as T
 import Pipes
+import System.Exit
 import System.IO (stderr, hPutStrLn)
-import System.Posix.Signals
+import System.Posix.Process (createSession)
+import System.Posix.Signals (Handler(..), sigTERM, sigCONT, signalProcessGroup, installHandler)
+import System.Posix.Types (ProcessGroupID)
 
 data HostHandle = HostHandle {
   barUpdateEvent :: BarUpdateEvent,
@@ -31,12 +34,24 @@ data HostHandle = HostHandle {
 }
 
 installSignalHandlers :: Bar -> IO ()
-installSignalHandlers bar = void $ installHandler sigCONT (Catch sigContAction) Nothing
+installSignalHandlers bar = do
+  mainThread <- myThreadId
+  processGroup <- createSession
+  void $ installHandler sigCONT (Catch sigContAction) Nothing
+  void $ installHandler sigTERM (Catch $ sigTermAction mainThread processGroup) Nothing
   where
     sigContAction :: IO ()
     sigContAction = do
       hPutStrLn stderr "SIGCONT received"
       updateBarDefault' bar
+    sigTermAction :: ThreadId -> ProcessGroupID -> IO ()
+    sigTermAction mainThread processGroup = do
+      void $ installHandler sigTERM Ignore Nothing
+      hPutStrLn stderr "SIGTERM received"
+      hPutStrLn stderr "Killing process group"
+      signalProcessGroup sigTERM processGroup
+      throwTo mainThread $ ExitFailure 143
+
 
 eventDispatcher :: Bar -> IORef [(T.Text, BlockEventHandler)] -> Consumer BlockEvent IO ()
 eventDispatcher bar eventHandlerListIORef = eventDispatcher'
