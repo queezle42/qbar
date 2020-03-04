@@ -47,7 +47,7 @@ serverCommandParser :: Parser (MainOptions -> IO ())
 serverCommandParser = hsubparser (
     command "swaybar" (info (runBarServer <$> barConfigurationParser) (progDesc "Start a new server for swaybar. Should be called by swaybar.")) <>
     command "i3bar" (info (runBarServer <$> barConfigurationParser) (progDesc "Start a new server for i3bar. Should be called by i3bar.")) <>
-    command "connect" (info (sendBlockStream <$> barConfigurationParser) (progDesc "Run blocks on this process but send them to another qbar server."))
+    command "send" (info (sendBlockStream <$> barConfigurationParser) (progDesc "Run blocks on this process but send them to another qbar server."))
   )
 
 themeCommandParser :: Parser (MainOptions -> IO ())
