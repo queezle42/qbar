@@ -21,6 +21,7 @@ import Data.Int (Int64)
 import Data.Maybe (fromMaybe)
 import qualified Data.Text.Lazy as T
 import Pipes
+import Pipes.Core
 import Pipes.Concurrent
 import Pipes.Safe (SafeT, runSafeT)
 import qualified Pipes.Prelude as PP
@@ -38,10 +39,7 @@ data BlockEvent = Click {
 $(deriveJSON defaultOptions ''BlockEvent)
 
 
-data PushMode = PushMode
-data PullMode = PullMode
-data CachedMode = CachedMode
-
+data ExitBlock = ExitBlock
 
 type BlockEventHandler = BlockEvent -> BarIO ()
 
@@ -49,36 +47,37 @@ type BlockState = Maybe (BlockOutput, Maybe BlockEventHandler)
 data BlockUpdateReason = DefaultUpdate | PullUpdate | UserUpdate
 type BlockUpdate = (BlockState, BlockUpdateReason)
 
-type Block = Producer BlockUpdate BarIO
-
-
 -- |Block that 'yield's an update whenever the block should be changed
-type PushBlock = Block PushMode
--- |Block that generates an update on 'yield'. Should only be pulled when an update is required.
-type PullBlock = Block PullMode
+type Block' = Producer BlockUpdate BarIO
+type Block = Producer BlockUpdate BarIO ExitBlock
+
+-- |Block that 'respond's with an update whenever it receives a 'PullSignal'.
+type PullBlock' = Server PullSignal BlockUpdate BarIO
+type PullBlock = Server PullSignal BlockUpdate BarIO ExitBlock
+data PullSignal = PullSignal
 
 -- |Cache that holds multiple BlockStates. When iterated it always immediately 'yield's the latest update, so it should only be pulled when a bar update has been requested.
-type BlockCache = Producer [BlockState] BarIO CachedMode
+type BlockCache = Producer [BlockState] BarIO ExitBlock
 
 class IsCachable a where
   toCachedBlock :: a -> BlockCache
 
-instance IsCachable PushBlock where
-  toCachedBlock = cachePushBlock
+instance IsCachable Block where
+  toCachedBlock = cacheBlock
 instance IsCachable PullBlock where
-  toCachedBlock = cachePushBlock . schedulePullBlock
+  toCachedBlock = cacheBlock . pullBlock
 instance IsCachable BlockCache where
   toCachedBlock = id
 
-class IsBlockMode a where
-  exitBlock :: Block a
-instance IsBlockMode PushMode where
-  exitBlock = return PushMode
-instance IsBlockMode PullMode where
-  exitBlock = return PullMode
+class IsBlock a where
+  exitBlock :: a
+instance IsBlock Block where
+  exitBlock = return ExitBlock
+instance IsBlock PullBlock where
+  exitBlock = return ExitBlock
 
 exitCache :: BlockCache
-exitCache = return CachedMode
+exitCache = return ExitBlock
 
 
 type BarIO = SafeT (ReaderT Bar IO)
@@ -115,26 +114,27 @@ askBar :: MonadBarIO m => m Bar
 askBar = liftBarIO $ lift ask
 
 
-class (MonadBarIO m) => MonadBlock m where
-  liftBlock :: Block a -> m a
-instance MonadBlock Block where
-  liftBlock = id
-instance (MonadBlock m) => MonadBlock (StateT a m) where
-  liftBlock = lift . liftBlock
-instance (MonadBlock m) => MonadBlock (ReaderT a m) where
-  liftBlock = lift . liftBlock
-instance (MonadBlock m, Monoid a) => MonadBlock (WriterT a m) where
-  liftBlock = lift . liftBlock
+sendBlockUpdate :: BlockOutput -> Proxy a' a PullSignal BlockUpdate BarIO ()
+sendBlockUpdate blockOutput = void . respond $ (Just (blockOutput, Nothing), PullUpdate)
 
-updateBlock :: MonadBlock m => BlockOutput -> m ()
-updateBlock blockOutput = liftBlock . yield $ (Just (blockOutput, Nothing), DefaultUpdate)
-
-updateBlock' :: MonadBlock m => BlockEventHandler -> BlockOutput -> m ()
-updateBlock' blockEventHandler blockOutput = liftBlock . yield $ (Just (blockOutput, Just blockEventHandler), DefaultUpdate)
+sendBlockUpdate' :: BlockEventHandler -> BlockOutput -> Proxy a' a PullSignal BlockUpdate BarIO ()
+sendBlockUpdate' blockEventHandler blockOutput = void . respond $ (Just (blockOutput, Just blockEventHandler), PullUpdate)
 
 -- |Update a block by removing the current output
-updateBlockEmpty :: MonadBlock m => m ()
-updateBlockEmpty = liftBlock . yield $ (Nothing, DefaultUpdate)
+sendEmptyBlockUpdate :: Proxy a' a PullSignal BlockUpdate BarIO ()
+sendEmptyBlockUpdate = void . respond $ (Nothing, PullUpdate)
+
+
+pushBlockUpdate :: BlockOutput -> Proxy a' a () BlockUpdate BarIO ()
+pushBlockUpdate blockOutput = void . respond $ (Just (blockOutput, Nothing), DefaultUpdate)
+
+pushBlockUpdate' :: BlockEventHandler -> BlockOutput -> Proxy a' a () BlockUpdate BarIO ()
+pushBlockUpdate' blockEventHandler blockOutput = void . respond $ (Just (blockOutput, Just blockEventHandler), DefaultUpdate)
+
+-- |Update a block by removing the current output
+pushEmptyBlockUpdate :: Proxy a' a () BlockUpdate BarIO ()
+pushEmptyBlockUpdate = void . respond $ (Nothing, DefaultUpdate)
+
 
 
 mkBlockState :: BlockOutput -> BlockState
@@ -162,27 +162,30 @@ runBarIO bar action = liftIO $ runReaderT (runSafeT action) bar
 defaultInterval :: Interval
 defaultInterval = everyNSeconds 10
 
--- |Converts a 'PullBlock' to a 'PushBlock' by running it whenever the 'defaultInterval' is triggered.
-schedulePullBlock :: PullBlock -> PushBlock
-schedulePullBlock = schedulePullBlock' defaultInterval
+-- |Converts a 'PullBlock' to a 'Block' by running it whenever the 'defaultInterval' is triggered.
+pullBlock :: PullBlock -> Block
+pullBlock = pullBlock' defaultInterval
 
--- |Converts a 'PullBlock' to a 'PushBlock' by running it whenever the 'defaultInterval' is triggered.
-schedulePullBlock' :: Interval -> PullBlock -> PushBlock
-schedulePullBlock' interval pullBlock = PushMode <$ pullBlock >-> sleepToNextInterval
+-- |Converts a 'PullBlock' to a 'Block' by running it whenever the 'defaultInterval' is triggered.
+pullBlock' :: Interval -> PullBlock -> Block
+pullBlock' interval pb = pb >>~ addPullSignal >-> sleepToNextInterval
   where
-    sleepToNextInterval :: Pipe BlockUpdate BlockUpdate BarIO PullMode
+    addPullSignal :: BlockUpdate -> Proxy PullSignal BlockUpdate () BlockUpdate BarIO ExitBlock
+    addPullSignal = respond >=> const (request PullSignal) >=> addPullSignal
+
+    sleepToNextInterval :: Pipe BlockUpdate BlockUpdate BarIO ExitBlock
     sleepToNextInterval = do
       event <- liftIO Event.new
       forever $ do
-        (state, _) <- await
+        (state, reason) <- await
         if hasEventHandler state
           then do
             -- If state already has an event handler, we do not attach another one
-            yield (state, PullUpdate)
+            yield (state, reason)
             sleepUntilInterval interval
           else do
             -- Attach a click handler that will trigger a block update
-            yield (updateEventHandler (triggerOnClick event) state, PullUpdate)
+            yield (updateEventHandler (triggerOnClick event) state, reason)
 
             scheduler <- askSleepScheduler
             result <- liftIO $ do
@@ -248,9 +251,10 @@ newCache'' = do
             Nothing -> exitCache
             Just value -> yield value >> cache
 
--- |Creates a cache from a push block.
-cachePushBlock :: PushBlock -> BlockCache
-cachePushBlock pushBlock = newCache $ () <$ (pushBlock >-> updateBarP >-> addBlockName >-> PP.map (\a -> [a]))
+-- |Creates a cache from a block.
+cacheBlock :: Block -> BlockCache
+-- 'Block's 'yield' an update whenever they want to update the cache.
+cacheBlock pushBlock = newCache $ () <$ (pushBlock >-> updateBarP >-> addBlockName >-> PP.map (\a -> [a]))
   where
     updateBarP :: Pipe BlockUpdate BlockState BarIO r
     updateBarP = forever $ do
@@ -292,10 +296,15 @@ autoPadding = autoPadding' 0 0
     padShortText :: Int64 -> BlockOutput -> BlockOutput
     padShortText len = over (shortText._Just) $ \s -> padString (len - printedLength s) <> s
 
-addBlock :: IsCachable a => a -> BarIO ()
+addBlock :: Block -> BarIO ()
 addBlock block = do
   newBlockChan' <- newBlockChan <$> askBar
   liftIO $ atomically $ writeTChan newBlockChan' $ toCachedBlock block
+
+addBlockCache :: BlockCache -> BarIO ()
+addBlockCache cache = do
+  newBlockChan' <- newBlockChan <$> askBar
+  liftIO $ atomically $ writeTChan newBlockChan' cache
 
 updateBar :: MonadBarIO m => BlockUpdateReason -> m ()
 updateBar reason = liftIO =<< requestBarUpdate <$> askBar <*> return reason

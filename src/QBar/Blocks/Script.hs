@@ -17,8 +17,8 @@ import System.Process.Typed (Process, shell, setStdin, setStdout,
   getStdout, closed, createPipe, readProcessStdout, startProcess, stopProcess)
 
 
-scriptBlock :: FilePath -> PullBlock
-scriptBlock path = forever $ updateBlock =<< (lift blockScriptAction)
+scriptBlock :: FilePath -> Block
+scriptBlock path = pullBlock $ forever $ sendBlockUpdate =<< (lift blockScriptAction)
   where
     blockScriptAction :: BarIO BlockOutput
     blockScriptAction = do
@@ -35,26 +35,26 @@ scriptBlock path = forever $ updateBlock =<< (lift blockScriptAction)
       (text:_) -> parseTags' text
       [] -> emptyBlock
 
-persistentScriptBlock :: FilePath -> PushBlock
+persistentScriptBlock :: FilePath -> Block
 -- The outer catchP only catches errors that occur during process creation
 persistentScriptBlock path = catchP startScriptProcess handleError
   where
-    handleError :: IOException -> PushBlock
+    handleError :: IOException -> Block
     handleError e = do
-      updateBlock . mkErrorOutput $ T.pack (show e)
+      pushBlockUpdate . mkErrorOutput $ T.pack (show e)
       exitBlock
-    handleErrorWithProcess :: (Process i o e) -> IOException -> PushBlock
+    handleErrorWithProcess :: (Process i o e) -> IOException -> Block
     handleErrorWithProcess process e = do
       stopProcess process
       handleError e
-    startScriptProcess :: PushBlock
+    startScriptProcess :: Block
     startScriptProcess = do
       let processConfig = setStdin closed $ setStdout createPipe $ shell path
       process <- startProcess processConfig
       -- The inner catchP catches errors that happen after the process has been created
       -- This handler will also make sure the process is stopped
       catchP (blockFromHandle $ getStdout process) (handleErrorWithProcess process)
-    blockFromHandle :: Handle -> PushBlock
+    blockFromHandle :: Handle -> Block
     blockFromHandle handle = forever $ do
       line <- liftIO $ TIO.hGetLine handle
-      updateBlock $ parseTags' line
+      pushBlockUpdate $ parseTags' line

@@ -1,6 +1,5 @@
 module QBar.Blocks.Pipe where
 
-import QBar.BlockOutput
 import QBar.ControlSocket
 import QBar.Core
 import QBar.TagParser
@@ -22,16 +21,16 @@ runPipeClient enableEvents mainOptions = do
   void $ waitEitherCancel hostTask inputTask
   where
     -- |Special block that reads the processes stdin line-by-line and shows the latest line in the block. Must never be used in a 'server' process or when stdin/stdout is used in another way.
-    pipeBlock :: Producer String BarIO () -> PushBlock
-    pipeBlock source = PushMode <$ source >-> pack
+    pipeBlock :: Producer String BarIO () -> Block
+    pipeBlock source = ExitBlock <$ source >-> pack
       where
         pack :: Pipe String BlockUpdate BarIO ()
         pack = forever $ do
           value <- await
-          yield (attachHandler . parseTags' . T.pack $ value, DefaultUpdate)
-        attachHandler :: BlockOutput -> BlockState
-        attachHandler = if enableEvents then mkBlockState' pipeBlockName handler else mkBlockState
+          let output = parseTags' . T.pack $ value
+          if enableEvents
+            then pushBlockUpdate' handler output
+            else pushBlockUpdate output
+
         handler :: BlockEventHandler
         handler event = liftIO $ BSC.hPutStrLn stderr $ encode event
-        pipeBlockName :: Text
-        pipeBlockName = "pipe"

@@ -4,7 +4,7 @@ module QBar.Blocks.CpuUsage where
 
 import Control.Applicative ((<|>))
 import Control.Lens
-import Control.Monad.State (StateT, evalStateT)
+import Control.Monad.State (StateT, evalStateT, lift)
 import qualified Data.Attoparsec.Text.Lazy as AT
 import qualified Data.Text.Lazy as T
 import QBar.BlockOutput
@@ -112,15 +112,15 @@ data CpuBlockState
 
 makeLenses ''CpuBlockState
 
-cpuUsageBlock :: Int -> PullBlock
-cpuUsageBlock decimalPlaces = evalStateT cpuUsageBlock' createState
+cpuUsageBlock :: Int -> Block
+cpuUsageBlock decimalPlaces = pullBlock $ evalStateT cpuUsageBlock' createState
   where
-    cpuUsageBlock' :: StateT CpuBlockState Block PullMode
-    cpuUsageBlock' = do
+    cpuUsageBlock' :: StateT CpuBlockState PullBlock' ExitBlock
+    cpuUsageBlock' = forever $ do
       updateState
       importance <- cpuUsageImportance
-      updateBlock . mkBlockOutput . importantText importance =<< ("💻\xFE0E " <>) <$> cpuUsageText
-      cpuUsageBlock'
+      text <- ("💻\xFE0E " <>) <$> cpuUsageText
+      lift $ sendBlockUpdate $ mkBlockOutput $ importantText importance text
     createState :: CpuBlockState
     createState =
       CpuBlockState

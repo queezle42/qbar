@@ -107,7 +107,7 @@ instance IsStream BlockStream where
     (cache, updateCacheC, sealCache) <- newCache'
     (eventOutput, eventInput, eventSeal) <- liftIO $ spawn' unbounded
     bar <- askBar
-    addBlock cache
+    addBlockCache cache
     prefix <- liftIO $ (<> "_") <$> randomIdentifier
     let blockConsumer = updateBarP bar >-> attachHandlerP eventOutput prefix >-> updateCacheC
     let eventProducer = fromInput eventInput

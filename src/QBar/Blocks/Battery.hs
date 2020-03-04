@@ -78,8 +78,8 @@ getBatteryState path = maybe getBatteryStateCharge (return . Just) =<< getBatter
         | otherwise -> BatteryOther
 
 
-batteryBlock :: PullBlock
-batteryBlock = forever $ do
+batteryBlock :: Block
+batteryBlock = pullBlock $ forever $ do
   batteryPaths <- liftIO $ map ((apiPath <> "/") <>) . filter (T.isPrefixOf "BAT" . T.pack) <$> getDirectoryContents apiPath
   batteryStates <- liftIO $ mapM getBatteryState batteryPaths
   isPlugged <- liftIO getPluggedState
@@ -101,9 +101,9 @@ batteryBlock = forever $ do
             _ -> return . return $ False
 
 
-updateBatteryBlock :: Bool -> [BatteryState] -> Block ()
-updateBatteryBlock _ [] = updateBlockEmpty
-updateBatteryBlock isPlugged bs = updateBlock $ (shortText.~shortText') $ mkBlockOutput fullText'
+updateBatteryBlock :: Bool -> [BatteryState] -> PullBlock' ()
+updateBatteryBlock _ [] = sendEmptyBlockUpdate
+updateBatteryBlock isPlugged bs = sendBlockUpdate $ (shortText.~shortText') $ mkBlockOutput fullText'
   where
     fullText' :: BlockText
     fullText' = overallPercentage <> optionalEachBattery <> optionalOverallEstimate
