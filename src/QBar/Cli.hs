@@ -77,7 +77,7 @@ blockParser =
     hidden <>
     command "date" (info (pure $ addBlock dateBlock) (progDesc "Load the date and time block.")) <>
     command "cpu" (info (pure $ addBlock $ cpuUsageBlock 1) (progDesc "Load the cpu usage block.")) <>
-    command "script" (info scriptBlockParser (progDesc "Display the output of an external script as a block."))
+    command "battery" (info (pure $ addBlock $ batteryBlock) (progDesc "Load the battery block.")) <>
   )
 
 scriptBlockParser :: Parser (BarIO ())
