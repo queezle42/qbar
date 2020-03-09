@@ -7,15 +7,8 @@ import Pipes
 import System.Random
 
 -- Pipe that signals an 'Event' after every value that passes through
-signalPipe :: MonadIO m => Event.Event -> Pipe a a m r
-signalPipe event = signalPipe'
-  where
-    signalPipe' :: MonadIO m => Pipe a a m r
-    signalPipe' = do
-      value <- await
-      yield value
-      liftIO $ Event.signal event
-      signalPipe'
+signalEventPipe :: MonadIO m => Event.Event -> Pipe a a m r
+signalEventPipe event = forever $ (yield =<< await) >> liftIO (Event.signal event)
 
 randomIdentifier :: MonadIO m => m Text
 randomIdentifier = liftIO $ T.pack <$> replicateM 8 randomCharacter
