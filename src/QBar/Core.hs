@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE RankNTypes #-}
 
 module QBar.Core where
 
@@ -8,20 +9,18 @@ import QBar.Time
 import QBar.Util
 
 import Control.Concurrent.Async
-import Control.Concurrent.Event as Event
+import qualified Control.Concurrent.Event as Event
 import Control.Concurrent.MVar
-import Control.Concurrent.STM.TChan (TChan, writeTChan)
+import Control.Concurrent.STM.TChan
 import Control.Lens
 import Control.Monad.Reader (ReaderT, runReaderT, ask)
 import Control.Monad.State (StateT)
 import Control.Monad.Writer (WriterT)
 import Data.Aeson.TH
-import Data.Either (isRight)
 import Data.Int (Int64)
 import Data.Maybe (fromMaybe)
 import qualified Data.Text.Lazy as T
 import Pipes
-import Pipes.Core
 import Pipes.Concurrent
 import Pipes.Safe (SafeT, runSafeT)
 import qualified Pipes.Prelude as PP
@@ -35,7 +34,7 @@ data MainOptions = MainOptions {
 data BlockEvent = Click {
   name :: T.Text,
   button :: Int
-} deriving Show
+} deriving (Eq, Show)
 $(deriveJSON defaultOptions ''BlockEvent)
 
 
@@ -44,17 +43,12 @@ data ExitBlock = ExitBlock
 type BlockEventHandler = BlockEvent -> BarIO ()
 
 type BlockState = Maybe (BlockOutput, Maybe BlockEventHandler)
-data BlockUpdateReason = DefaultUpdate | PullUpdate | UserUpdate
+data BlockUpdateReason = DefaultUpdate | PollUpdate | UserUpdate
 type BlockUpdate = (BlockState, BlockUpdateReason)
 
 -- |Block that 'yield's an update whenever the block should be changed
 type Block' = Producer BlockUpdate BarIO
 type Block = Producer BlockUpdate BarIO ExitBlock
-
--- |Block that 'respond's with an update whenever it receives a 'PullSignal'.
-type PullBlock' = Server PullSignal BlockUpdate BarIO
-type PullBlock = Server PullSignal BlockUpdate BarIO ExitBlock
-data PullSignal = PullSignal
 
 -- |Cache that holds multiple BlockStates. When iterated it always immediately 'yield's the latest update, so it should only be pulled when a bar update has been requested.
 type BlockCache = Producer [BlockState] BarIO ExitBlock
@@ -64,17 +58,11 @@ class IsCachable a where
 
 instance IsCachable Block where
   toCachedBlock = cacheBlock
-instance IsCachable PullBlock where
-  toCachedBlock = cacheBlock . pullBlock
 instance IsCachable BlockCache where
   toCachedBlock = id
 
-class IsBlock a where
-  exitBlock :: a
-instance IsBlock Block where
-  exitBlock = return ExitBlock
-instance IsBlock PullBlock where
-  exitBlock = return ExitBlock
+exitBlock :: Functor m => Proxy a' a b' b m ExitBlock
+exitBlock = return ExitBlock
 
 exitCache :: BlockCache
 exitCache = return ExitBlock
@@ -114,27 +102,15 @@ askBar :: MonadBarIO m => m Bar
 askBar = liftBarIO $ lift ask
 
 
-sendBlockUpdate :: BlockOutput -> Proxy a' a PullSignal BlockUpdate BarIO ()
-sendBlockUpdate blockOutput = void . respond $ (Just (blockOutput, Nothing), PullUpdate)
+pushBlockUpdate :: BlockOutput -> Producer' BlockUpdate BarIO ()
+pushBlockUpdate blockOutput = yield (Just (blockOutput, Nothing), DefaultUpdate)
 
-sendBlockUpdate' :: BlockEventHandler -> BlockOutput -> Proxy a' a PullSignal BlockUpdate BarIO ()
-sendBlockUpdate' blockEventHandler blockOutput = void . respond $ (Just (blockOutput, Just blockEventHandler), PullUpdate)
-
--- |Update a block by removing the current output
-sendEmptyBlockUpdate :: Proxy a' a PullSignal BlockUpdate BarIO ()
-sendEmptyBlockUpdate = void . respond $ (Nothing, PullUpdate)
-
-
-pushBlockUpdate :: BlockOutput -> Proxy a' a () BlockUpdate BarIO ()
-pushBlockUpdate blockOutput = void . respond $ (Just (blockOutput, Nothing), DefaultUpdate)
-
-pushBlockUpdate' :: BlockEventHandler -> BlockOutput -> Proxy a' a () BlockUpdate BarIO ()
-pushBlockUpdate' blockEventHandler blockOutput = void . respond $ (Just (blockOutput, Just blockEventHandler), DefaultUpdate)
+pushBlockUpdate' :: BlockEventHandler -> BlockOutput -> Producer' BlockUpdate BarIO ()
+pushBlockUpdate' blockEventHandler blockOutput = yield (Just (blockOutput, Just blockEventHandler), DefaultUpdate)
 
 -- |Update a block by removing the current output
-pushEmptyBlockUpdate :: Proxy a' a () BlockUpdate BarIO ()
-pushEmptyBlockUpdate = void . respond $ (Nothing, DefaultUpdate)
-
+pushEmptyBlockUpdate :: Producer' BlockUpdate BarIO ()
+pushEmptyBlockUpdate = yield (Nothing, DefaultUpdate)
 
 
 mkBlockState :: BlockOutput -> BlockState
@@ -162,43 +138,6 @@ runBarIO bar action = liftIO $ runReaderT (runSafeT action) bar
 defaultInterval :: Interval
 defaultInterval = everyNSeconds 10
 
--- |Converts a 'PullBlock' to a 'Block' by running it whenever the 'defaultInterval' is triggered.
-pullBlock :: PullBlock -> Block
-pullBlock = pullBlock' defaultInterval
-
--- |Converts a 'PullBlock' to a 'Block' by running it whenever the 'defaultInterval' is triggered.
-pullBlock' :: Interval -> PullBlock -> Block
-pullBlock' interval pb = pb >>~ addPullSignal >-> sleepToNextInterval
-  where
-    addPullSignal :: BlockUpdate -> Proxy PullSignal BlockUpdate () BlockUpdate BarIO ExitBlock
-    addPullSignal = respond >=> const (request PullSignal) >=> addPullSignal
-
-    sleepToNextInterval :: Pipe BlockUpdate BlockUpdate BarIO ExitBlock
-    sleepToNextInterval = do
-      event <- liftIO Event.new
-      forever $ do
-        (state, reason) <- await
-        if hasEventHandler state
-          then do
-            -- If state already has an event handler, we do not attach another one
-            yield (state, reason)
-            sleepUntilInterval interval
-          else do
-            -- Attach a click handler that will trigger a block update
-            yield (updateEventHandler (triggerOnClick event) state, reason)
-
-            scheduler <- askSleepScheduler
-            result <- liftIO $ do
-              timerTask <- async $ sleepUntilInterval' scheduler defaultInterval
-              eventTask <- async $ Event.wait event
-              waitEitherCancel timerTask eventTask
-
-            when (isRight result) $ do
-              liftIO $ Event.clear event
-              yield (invalidateBlockState state, UserUpdate)
-
-    triggerOnClick :: Event -> BlockEvent -> BarIO ()
-    triggerOnClick event _ = liftIO $ Event.set event
 
 -- |Creates a new cache from a producer that automatically seals itself when the producer terminates.
 newCache :: Producer [BlockState] BarIO () -> BlockCache

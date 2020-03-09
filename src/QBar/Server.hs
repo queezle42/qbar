@@ -146,7 +146,7 @@ runBarServer loadBlocks options = runBarHost barServer loadBlocks
       liftIO $ link =<< async (renderLoop renderEvent themedBlockProducerMVar)
 
       -- Return a consumer that accepts BlockOutputs from the bar host, moves them to the mailbox and signals the renderer to update the bar.
-      return (signalPipe renderEvent >-> toOutput output, swayBarInput options)
+      return (signalEventPipe renderEvent >-> toOutput output, swayBarInput options)
 
     renderLoop :: Event.Event -> MVar (Producer [ThemedBlockOutput] IO (), Bool) -> IO ()
     renderLoop renderEvent themedBlockProducerMVar = runEffect $

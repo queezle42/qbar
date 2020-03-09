@@ -1,5 +1,6 @@
 module QBar.Blocks.Script where
 
+import QBar.BlockHelper
 import QBar.BlockOutput
 import QBar.Core
 import QBar.TagParser
@@ -17,8 +18,8 @@ import System.Process.Typed (Process, shell, setStdin, setStdout,
   getStdout, closed, createPipe, readProcessStdout, startProcess, stopProcess)
 
 
-scriptBlock :: FilePath -> Block
-scriptBlock path = pullBlock $ forever $ sendBlockUpdate =<< (lift blockScriptAction)
+pollScriptBlock :: FilePath -> Block
+pollScriptBlock path = runPollBlock $ forever $ yieldBlockUpdate =<< (lift blockScriptAction)
   where
     blockScriptAction :: BarIO BlockOutput
     blockScriptAction = do
@@ -27,17 +28,16 @@ scriptBlock path = pullBlock $ forever $ sendBlockUpdate =<< (lift blockScriptAc
       (exitCode, output) <- liftIO $ readProcessStdout $ shell path
       return $ case exitCode of
         ExitSuccess -> createScriptBlockOutput output
-        (ExitFailure nr) -> case nr of
-          _ -> mkErrorOutput $ "exit code " <> T.pack (show nr) <> ""
+        (ExitFailure nr) -> mkErrorOutput $ "exit code " <> T.pack (show nr) <> ""
     createScriptBlockOutput :: C8.ByteString -> BlockOutput
     createScriptBlockOutput output = case map E.decodeUtf8 (C8.lines output) of
       (text:short:_) -> parseTags'' text short
       (text:_) -> parseTags' text
       [] -> emptyBlock
 
-persistentScriptBlock :: FilePath -> Block
+scriptBlock :: FilePath -> Block
 -- The outer catchP only catches errors that occur during process creation
-persistentScriptBlock path = catchP startScriptProcess handleError
+scriptBlock path = catchP startScriptProcess handleError
   where
     handleError :: IOException -> Block
     handleError e = do

@@ -3,7 +3,7 @@ module QBar.Blocks
     QBar.Blocks.CpuUsage.cpuUsageBlock,
     QBar.Blocks.Date.dateBlock,
     QBar.Blocks.Script.scriptBlock,
-    QBar.Blocks.Script.persistentScriptBlock,
+    QBar.Blocks.Script.pollScriptBlock,
   )
 where
 

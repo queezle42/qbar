@@ -138,12 +138,12 @@ filterDuplicates = do
 
 followupEventWaitTime :: BlockUpdateReason -> Int
 followupEventWaitTime DefaultUpdate = 10000
-followupEventWaitTime PullUpdate = 50000
+followupEventWaitTime PollUpdate = 50000
 -- 'followupEventWaitTime' for 'UserUpdate' has to be zero, or blocks would be blocked blocked for this time when sending a 'UserUpdate'.
 followupEventWaitTime UserUpdate = 0
 
 followupEventWaitTimeDefault :: Int
-followupEventWaitTimeDefault = followupEventWaitTime PullUpdate
+followupEventWaitTimeDefault = followupEventWaitTime PollUpdate
 
 requestBarUpdateHandler :: HostHandle -> BlockUpdateReason -> IO ()
 requestBarUpdateHandler HostHandle{barUpdateEvent, barUpdatedEvent, followupEventWaitTimeMVar} blockUpdateReason = do

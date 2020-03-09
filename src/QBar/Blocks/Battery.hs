@@ -1,10 +1,9 @@
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-
 module QBar.Blocks.Battery where
 
-
+import QBar.BlockHelper
 import QBar.Core
 import QBar.Blocks.Utils
 import QBar.BlockOutput
@@ -79,7 +78,7 @@ getBatteryState path = maybe getBatteryStateCharge (return . Just) =<< getBatter
 
 
 batteryBlock :: Block
-batteryBlock = pullBlock $ forever $ do
+batteryBlock = runPollBlock $ forever $ do
   batteryPaths <- liftIO $ map ((apiPath <> "/") <>) . filter (T.isPrefixOf "BAT" . T.pack) <$> getDirectoryContents apiPath
   batteryStates <- liftIO $ mapM getBatteryState batteryPaths
   isPlugged <- liftIO getPluggedState
@@ -101,9 +100,9 @@ batteryBlock = pullBlock $ forever $ do
             _ -> return . return $ False
 
 
-updateBatteryBlock :: Bool -> [BatteryState] -> PullBlock' ()
-updateBatteryBlock _ [] = sendEmptyBlockUpdate
-updateBatteryBlock isPlugged bs = sendBlockUpdate $ (shortText.~shortText') $ mkBlockOutput fullText'
+updateBatteryBlock :: Bool -> [BatteryState] -> PollBlock' ()
+updateBatteryBlock _ [] = yieldEmptyBlockUpdate
+updateBatteryBlock isPlugged bs = yieldBlockUpdate $ (shortText.~shortText') $ mkBlockOutput fullText'
   where
     fullText' :: BlockText
     fullText' = overallPercentage <> optionalEachBattery <> optionalOverallEstimate

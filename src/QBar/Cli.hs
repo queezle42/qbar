@@ -78,10 +78,11 @@ blockParser =
     command "date" (info (pure $ addBlock dateBlock) (progDesc "Load the date and time block.")) <>
     command "cpu" (info (pure $ addBlock $ cpuUsageBlock 1) (progDesc "Load the cpu usage block.")) <>
     command "battery" (info (pure $ addBlock $ batteryBlock) (progDesc "Load the battery block.")) <>
+    command "script" (info scriptBlockParser (progDesc "Display the output of an external script as a block."))
   )
 
 scriptBlockParser :: Parser (BarIO ())
 scriptBlockParser = helper <*> do
-  persistent <- switch $ long "persistent" <> short 'p' <> help "Run script in persistent mode (every line of output updates the block)."
+  poll <- switch $ long "poll" <> short 'p' <> help "Run script in poll mode (every line of output updates the block)."
   script <- strArgument (metavar "SCRIPT" <> help "The script that will be executed with a shell.")
-  return $ (if persistent then addBlock . persistentScriptBlock else addBlock . scriptBlock) script
+  return $ (if poll then addBlock . pollScriptBlock else addBlock . scriptBlock) script

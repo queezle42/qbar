@@ -1,5 +1,6 @@
 module QBar.Blocks.Date where
 
+import QBar.BlockHelper
 import QBar.BlockOutput
 import QBar.Core
 import QBar.Time
@@ -10,9 +11,9 @@ import Data.Time.LocalTime
 
 
 dateBlock :: Block
-dateBlock = pullBlock' (everyNSeconds 60) $ forever $ do
+dateBlock = runPollBlock' (everyNSeconds 60) $ forever $ do
   zonedTime <- liftIO getZonedTime
   let date = T.pack (formatTime defaultTimeLocale "%a %F" zonedTime)
   let time = T.pack (formatTime defaultTimeLocale "%R" zonedTime)
   let text = normalText ("📅\xFE0E " <> date <> " ") <> activeText time
-  sendBlockUpdate $ mkBlockOutput text
+  yieldBlockUpdate $ mkBlockOutput text
