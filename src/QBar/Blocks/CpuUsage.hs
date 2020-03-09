@@ -128,7 +128,7 @@ cpuUsageBlock decimalPlaces = pullBlock $ evalStateT cpuUsageBlock' createState
           _lastCpuUsage = 0
         }
     cpuUsageImportance :: Monad m => StateT CpuBlockState m Importance
-    cpuUsageImportance = toImportance (100, 90, 80, 60, 50, 0) <$> use lastCpuUsage
+    cpuUsageImportance = toImportance (0, 60, 80, 90 ,100) <$> use lastCpuUsage
     cpuUsageTextWidth :: Num a => a
     cpuUsageTextWidth
       | decimalPlaces == 0 = 3

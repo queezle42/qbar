@@ -122,15 +122,14 @@ defaultTheme :: Theme
 defaultTheme = mkTheme defaultTheme'
   where
     defaultTheme' :: SimplifiedTheme
-    defaultTheme' active importance
-      | isCritical importance, active = (ColorRGB (RGB 0 0 0), Just $ ColorRGB (RGB 1 0 0))
-      | isCritical importance         = (ColorRGB (RGB 0.8 0.15 0.15), Nothing)
-      | isError importance, active    = (ColorRGB (RGB 1 0.3 0), Nothing)
-      | isError importance            = (ColorRGB (RGB 0.7 0.35 0.2), Nothing)
-      | isWarning importance,active   = (ColorRGB (RGB 1 0.9 0), Nothing)
-      | isWarning importance          = (ColorRGB (RGB 0.6 0.6 0), Nothing)
-      | otherwise, active             = (ColorRGB (RGB 1 1 1), Nothing)
-      | otherwise                     = (ColorRGB (RGB (0x96 / 255) (0x98 / 255) (0x96 / 255)), Nothing)
+    defaultTheme' True (CriticalImportant _) = (ColorRGB (RGB 0 0 0), Just $ ColorRGB (RGB 1 0 0))
+    defaultTheme' False (CriticalImportant _) = (ColorRGB (RGB 0.8 0.15 0.15), Nothing)
+    defaultTheme' True (ErrorImportant _) = (ColorRGB (RGB 1 0.3 0), Nothing)
+    defaultTheme' False (ErrorImportant _) = (ColorRGB (RGB 0.7 0.35 0.2), Nothing)
+    defaultTheme' True (WarnImportant _) = (ColorRGB (RGB 1 0.9 0), Nothing)
+    defaultTheme' False (WarnImportant _) = (ColorRGB (RGB 0.6 0.6 0), Nothing)
+    defaultTheme' True (NormalImportant _) = (ColorRGB (RGB 1 1 1), Nothing)
+    defaultTheme' False (NormalImportant _) = (ColorRGB (RGB (0x96 / 255) (0x98 / 255) (0x96 / 255)), Nothing)
 
 
 rainbowTheme :: Theme

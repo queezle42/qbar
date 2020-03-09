@@ -141,7 +141,7 @@ updateBatteryBlock isPlugged bs = sendBlockUpdate $ (shortText.~shortText') $ mk
 
 
 batteryImportance :: [BatteryState] -> Importance
-batteryImportance = toImportance (100, 90, 80, 60, 50, 0) . (100-) . batteryPercentage
+batteryImportance = toImportance (0, 60, 80, 90, 100) . (100 -) . batteryPercentage
 
 
 batteryPercentage :: [BatteryState] -> Float

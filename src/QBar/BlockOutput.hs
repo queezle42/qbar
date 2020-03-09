@@ -40,11 +40,13 @@ data BlockTextSegment = BlockTextSegment {
   }
   deriving (Eq, Show)
 
-type Importance = Float
+data Importance = NormalImportant Float | WarnImportant Float | ErrorImportant Float | CriticalImportant Float
+  deriving (Eq, Show)
 
 
 $(deriveJSON defaultOptions ''BlockOutput)
 makeLenses ''BlockOutput
+$(deriveJSON defaultOptions ''Importance)
 $(deriveJSON defaultOptions ''BlockTextSegment)
 $(deriveJSON defaultOptions ''BlockText)
 
@@ -76,67 +78,68 @@ addIcon icon = over fullText $ (<>) . normalText $ icon <> " "
 
 
 normalImportant :: Importance
-normalImportant = 1
+normalImportant = NormalImportant 0.5
+
+normalImportant' :: Float -> Importance
+normalImportant' = NormalImportant . min 1 . max 0
+
 warnImportant :: Importance
-warnImportant = 2
+warnImportant = WarnImportant 0.5
+
+warnImportant' :: Float -> Importance
+warnImportant' = WarnImportant . min 1 . max 0
+
 errorImportant :: Importance
-errorImportant = 3
+errorImportant = ErrorImportant 0.5
+
+errorImportant' :: Float -> Importance
+errorImportant' = ErrorImportant . min 1 . max 0
+
 criticalImportant :: Importance
-criticalImportant = 4
+criticalImportant = CriticalImportant 0.5
+
+criticalImportant' :: Float -> Importance
+criticalImportant' = CriticalImportant . min 1 . max 0
 
 isCritical :: Importance -> Bool
-isCritical i
-  | i >= criticalImportant = True
-  | otherwise = False
+isCritical (CriticalImportant _) = True
+isCritical _ = False
+
 isError :: Importance -> Bool
-isError i
-  | isCritical i = False
-  | i >= errorImportant = True
-  | otherwise = False
+isError (ErrorImportant _) = True
+isError _ = False
+
 isWarning :: Importance -> Bool
-isWarning i
-  | isCritical i = False
-  | isError i = False
-  | i >= warnImportant = True
-  | otherwise = False
+isWarning (WarnImportant _) = True
+isWarning _ = False
+
 isNormal :: Importance -> Bool
-isNormal i
-  | isCritical i = False
-  | isError i = False
-  | isWarning i = False
-  | otherwise = True
+isNormal (NormalImportant _) = True
+isNormal _ = False
 
-toImportance :: Real a => (a, a, a, a, a, a) -> a -> Importance
-toImportance (tMax, tCritical, tError, tWarning, tNormal, tMinimal) =
-  toImportance' (Just tMax, tCritical, tError, tWarning, tNormal, Just tMinimal)
+toImportance :: Real a => (a, a, a, a, a) -> a -> Importance
+toImportance (tMin, tWarning, tError, tCritical, tMax) =
+  toImportance' (Just tMin, tWarning, tError, tCritical, Just tMax)
 
-toImportance' :: forall a. Real a => (Maybe a, a, a, a, a, Maybe a) -> a -> Importance
-toImportance' (tMax, tCritical, tError, tWarning, tNormal, tMinimal) val
-  | tCritical <= val = 4 + valueCritical tMax  tCritical val
-  | tError  <= val = 3 + linearMatch tCritical tError  val
-  | tWarning <= val = 2 + linearMatch tError  tWarning val
-  | tNormal <= val = 1 + linearMatch tWarning tNormal val
-  | otherwise = 0 + valueOtherwise tNormal tMinimal  val
+toImportance' :: Real a => (Maybe a, a, a, a, Maybe a) -> a -> Importance
+toImportance' (tMin, tWarning, tError, tCritical, tMax) val
+  | tCritical <= val = criticalImportant' valueCritical
+  | tError <= val = errorImportant' $ linearMatch tCritical tError val
+  | tWarning <= val = warnImportant' $ linearMatch tError tWarning val
+  | otherwise = normalImportant' valueNormal
   where
-    e :: Importance
-    e = exp 1
-    linearMatch :: a -> a -> a -> Importance
-    linearMatch u l v = frac (v - l) (u - l)
-    logarithmicMatch :: a -> a -> Importance
-    logarithmicMatch l u = 1 - 1 / log (e + realToFrac (u - l))
-    frac :: a -> a -> Importance
-    frac a b = realToFrac a / realToFrac b
-    valueCritical :: Maybe a -> a -> a -> Importance
-    valueCritical (Just tMax') tCritical' v
-      | tMax' > v = linearMatch tMax' tCritical' v
-      | otherwise = 1
-    valueCritical Nothing tCritical' v = logarithmicMatch tCritical' v
-    valueOtherwise :: a -> Maybe a -> a -> Importance
-    valueOtherwise tNormal' (Just tMinimal') v
-      | tMinimal' < v = linearMatch tNormal' tMinimal' v
-      | otherwise = 0
-    valueOtherwise tNormal' Nothing v = 1 - logarithmicMatch v tNormal'
-
+    linearMatch :: Real a => a -> a -> a -> Float
+    linearMatch u l v = realToFrac (v - l) / realToFrac (u - l)
+    logarithmicMatch :: Real a => a -> a -> Float
+    logarithmicMatch l u = (\x -> 1 - 1 / (1 + x)) . log . realToFrac $ u - l
+    valueCritical :: Float
+    valueCritical = case tMax of
+      Just tMax' -> if tMax' > val then linearMatch tMax' tCritical val else 1
+      Nothing -> logarithmicMatch tCritical val
+    valueNormal :: Float
+    valueNormal = case tMin of
+      Just tMin' -> if tMin' < val then linearMatch tWarning tMin' val else 0
+      Nothing -> 1 - logarithmicMatch val tWarning
 
 invalidateBlock :: BlockOutput -> BlockOutput
 invalidateBlock block@BlockOutput{ _fullText, _shortText } = block {
