@@ -53,6 +53,7 @@ default-extensions:
 - NamedFieldPuns
 - LambdaCase
 - MultiWayIf
+- ScopedTypeVariables
 
 ghc-options:
 - -fwarn-unused-do-bind
