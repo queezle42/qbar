@@ -28,6 +28,9 @@ import Pipes.Concurrent (Input, spawn, latest, toOutput, fromInput)
 import qualified Pipes.Prelude as PP
 import System.IO (stdin, stdout, stderr, hFlush)
 
+data ServerMode = Host | Mirror
+data ServerOutput = Sway | Headless
+
 renderIndicators :: [Text]
 renderIndicators = ["*"] <> cycle ["/", "-", "\\", "|"]
 
@@ -116,38 +119,66 @@ swayBarOutput options@MainOptions{indicator} = do
       pangoBlockName = _blockName
     }
 
+runBarServerMirror :: BarIO () -> MainOptions -> IO ()
+runBarServerMirror loadBlocks options = do
+  -- TODO: apply theme from remote
+  (blockConsumer, eventProducer, _setTheme') <- themingBarServer options
+  runBarHost (return (blockConsumer, eventProducer)) $ do
+    addServerMirrorStream options
+    loadBlocks
+
+
 runBarServer :: BarIO () -> MainOptions -> IO ()
-runBarServer loadBlocks options = runBarHost barServer loadBlocks
+runBarServer loadBlocks options = runBarHost' $ do
+  barServer <- barServerWithSocket options
+  loadBlocks
+  attachBarOutput barServer
+
+
+barServerWithSocket :: MainOptions -> BarIO (Consumer [BlockOutput] IO (), Producer BlockEvent IO ())
+barServerWithSocket options = do
+  (blockConsumer, eventProducer, setTheme') <- themingBarServer options
+
+  bar <- askBar
+
+  -- Create control socket
+  controlSocketAsync <- liftIO $ listenUnixSocketAsync options bar (commandHandler setTheme')
+  liftIO $ link controlSocketAsync
+
+  return (blockConsumer, eventProducer)
   where
-    barServer :: BarIO (Consumer [BlockOutput] IO (), Producer BlockEvent IO ())
-    barServer = do
-      -- Event to render the bar (fired when block output or theme is changed)
-      renderEvent <- liftIO Event.new
-
-      -- Mailbox to store the latest 'BlockOutput's
-      (output, input) <- liftIO $ spawn $ latest []
-
-      -- MVar that holds the current theme, linked to the input from the above mailbox
-      (themedBlockProducerMVar :: MVar (Producer [ThemedBlockOutput] IO (), Bool)) <- liftIO $ newMVar $ throw $ userError "Unexpected behavior: Default theme not set"
-
-      let setTheme' = setTheme renderEvent input themedBlockProducerMVar
-
-      -- Set default theme
-      liftIO $ setTheme' defaultTheme
-
-      bar <- askBar
-
-      -- Create control socket
-      controlSocketAsync <- liftIO $ listenUnixSocketAsync options bar (commandHandler setTheme')
-      liftIO $ link controlSocketAsync
+    commandHandler :: (Theme -> IO ()) -> Command -> IO CommandResult
+    commandHandler setTheme' (SetTheme name) =
+      case findTheme name of
+        Left err -> return $ Error err
+        Right theme -> do
+          setTheme' theme
+          return Success
 
 
-      -- Run render loop
-      liftIO $ link =<< async (renderLoop renderEvent themedBlockProducerMVar)
+themingBarServer :: MonadIO m => MainOptions -> m (Consumer [BlockOutput] IO (), Producer BlockEvent IO (), Theme -> IO ())
+themingBarServer options = do
+  -- Event to render the bar (fired when block output or theme is changed)
+  renderEvent <- liftIO Event.new
 
-      -- Return a consumer that accepts BlockOutputs from the bar host, moves them to the mailbox and signals the renderer to update the bar.
-      return (signalEventPipe renderEvent >-> toOutput output, swayBarInput options)
+  -- Mailbox to store the latest 'BlockOutput's
+  (output, input) <- liftIO $ spawn $ latest []
 
+  -- MVar that holds the current theme, linked to the input from the above mailbox
+  (themedBlockProducerMVar :: MVar (Producer [ThemedBlockOutput] IO (), Bool)) <- liftIO $ newMVar $ throw $ userError "Unexpected behavior: Default theme not set"
+
+  let setTheme' = setTheme renderEvent input themedBlockProducerMVar
+
+  -- Set default theme
+  liftIO $ setTheme' defaultTheme
+
+  -- Run render loop
+  liftIO $ link =<< async (renderLoop renderEvent themedBlockProducerMVar)
+
+  -- Return a consumer that accepts BlockOutputs from the bar host, moves them to the mailbox and signals the renderer to update the bar.
+  return (signalEventPipe renderEvent >-> toOutput output, swayBarInput options, setTheme')
+
+  where
     renderLoop :: Event.Event -> MVar (Producer [ThemedBlockOutput] IO (), Bool) -> IO ()
     renderLoop renderEvent themedBlockProducerMVar = runEffect $
       themeAnimator renderEvent themedBlockProducerMVar >-> filterDuplicates >-> swayBarOutput options
@@ -168,7 +199,6 @@ runBarServer loadBlocks options = runBarHost barServer loadBlocks
           yield themedBlocks
           liftIO $ if isAnimated''
             -- Limit to 10 FPS because swaybar rendering is surprisingly expensive
-            -- TODO: make FPS configurable
             then void $ Event.waitTimeout renderEvent 100000
             else Event.wait renderEvent
           themeAnimator'
@@ -181,11 +211,3 @@ runBarServer loadBlocks options = runBarHost barServer loadBlocks
         mkThemedBlockProducer :: Theme -> (Producer [ThemedBlockOutput] IO (), Bool)
         mkThemedBlockProducer (StaticTheme themeFn) = (fromInput blockOutputInput >-> PP.map themeFn, False)
         mkThemedBlockProducer (AnimatedTheme themePipe) = (fromInput blockOutputInput >-> themePipe, True)
-
-    commandHandler :: (Theme -> IO ()) -> Command -> IO CommandResult
-    commandHandler setTheme' (SetTheme name) =
-      case findTheme name of
-        Left err -> return $ Error err
-        Right theme -> do
-          setTheme' theme
-          return Success

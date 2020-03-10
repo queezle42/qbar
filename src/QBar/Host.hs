@@ -8,10 +8,11 @@ import QBar.Core
 import QBar.Time
 
 import Control.Concurrent (forkIO, forkFinally, threadDelay)
-import Control.Concurrent.Async (async, wait)
+import Control.Concurrent.Async (async, wait, waitBoth)
 import qualified Control.Concurrent.Event as Event
 import Control.Concurrent.MVar (MVar, newMVar, modifyMVar_, swapMVar)
-import Control.Concurrent.STM.TChan (TChan, newTChanIO, tryReadTChan)
+import Control.Concurrent.STM.TChan
+import Control.Concurrent.STM.TVar
 import Control.Exception (SomeException, catch)
 import Control.Lens hiding (each, (.=))
 import Control.Monad.STM (atomically)
@@ -19,9 +20,9 @@ import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import Data.Maybe (catMaybes, mapMaybe)
 import qualified Data.Text.Lazy as T
 import Pipes
+import Pipes.Concurrent (spawn, unbounded, toOutput, fromInput)
 import System.IO (stderr, hPutStrLn)
 import System.Posix.Signals (Handler(..), sigCONT, installHandler)
-
 
 data HostHandle = HostHandle {
   barUpdateEvent :: BarUpdateEvent,
@@ -161,8 +162,18 @@ requestBarUpdateHandler HostHandle{barUpdateEvent, barUpdatedEvent, followupEven
     signalHost _ = Event.set barUpdateEvent
 
 
+attachBarOutput :: (Consumer [BlockOutput] IO (), Producer BlockEvent IO ()) -> BarIO ()
+attachBarOutput (blockOutputConsumer, blockEventProducer) = do
+  bar <- askBar
+  liftIO $ attachBarOutputInternal bar (blockOutputConsumer, blockEventProducer)
+
+
 runBarHost :: BarIO (Consumer [BlockOutput] IO (), Producer BlockEvent IO ()) -> BarIO () -> IO ()
-runBarHost createHost loadBlocks = do
+runBarHost createHost loadBlocks = runBarHost' $ loadBlocks >> createHost >>= attachBarOutput
+
+
+runBarHost' :: BarIO () -> IO ()
+runBarHost' initializeBarAction = do
   -- Create an event used request bar updates
   barUpdateEvent <- Event.newSet
   -- Create an event that is signaled after bar updates
@@ -185,20 +196,59 @@ runBarHost createHost loadBlocks = do
     eventHandlerListIORef
   }
 
+  (eventOutput, eventInput) <- spawn unbounded
+
+  -- Create cache for block outputs
+  cache <- (,) <$> newTVarIO [] <*> newBroadcastTChanIO
+  let blockOutputProducer = blockOutputFromCache cache
+
+  -- Important: both monads (output producer / event consumer) will be forked whenever a new output connects!
+  let attachBarOutputInternal = attachBarOutputImpl blockOutputProducer (toOutput eventOutput)
+
+
   let requestBarUpdate = requestBarUpdateHandler hostHandle
 
-  let bar = Bar {requestBarUpdate, newBlockChan, barSleepScheduler}
+  let bar = Bar {requestBarUpdate, newBlockChan, barSleepScheduler, attachBarOutputInternal}
 
   -- Install signal handler for SIGCONT
   installSignalHandlers bar
 
-  runBarIO bar loadBlocks
+  -- Load blocks and initialize output handlers
+  runBarIO bar initializeBarAction
 
-  (host, barEventProducer) <- runBarIO bar createHost
+  -- Run blocks and send filtered output to connected clients
+  blockTask <- async $ runEffect $ runBlocks bar hostHandle >-> filterDuplicates >-> blockOutputToCache cache
+  -- Dispatch incoming events to blocks
+  eventTask <- async $ runEffect $ fromInput eventInput >-> eventDispatcher bar eventHandlerListIORef
 
-  let handleStdin = liftIO $ runEffect $ barEventProducer >-> eventDispatcher bar eventHandlerListIORef
-  -- Fork stdin handler
-  void $ forkFinally (runBarIO bar handleStdin) (\result -> hPutStrLn stderr $ "handleStdin failed: " <> show result)
 
-  -- Run bar host
-  runEffect $ runBlocks bar hostHandle >-> filterDuplicates >-> host
+  void $ waitBoth blockTask eventTask
+
+  where
+    blockOutputToCache :: (TVar [BlockOutput], TChan [BlockOutput]) -> Consumer [BlockOutput] IO ()
+    blockOutputToCache (var, chan) = forever $ do
+      value <- await
+      liftIO . atomically $ do
+        writeTVar var value
+        writeTChan chan value
+
+    -- Monad will be forked when new outputs connect
+    blockOutputFromCache :: (TVar [BlockOutput], TChan [BlockOutput]) -> Producer [BlockOutput] IO ()
+    blockOutputFromCache (var, chan) = do
+      (outputChan, value) <- liftIO . atomically $ do
+        value <- readTVar var
+        outputChan <- dupTChan chan
+        return (outputChan, value)
+
+      yield value
+
+      forever $ yield =<< (liftIO . atomically $ readTChan outputChan)
+
+    attachBarOutputImpl :: Producer [BlockOutput] IO () -> Consumer BlockEvent IO () -> (Consumer [BlockOutput] IO (), Producer BlockEvent IO ()) -> IO ()
+    attachBarOutputImpl blockOutputProducer eventConsumer (barOutputConsumer, barEventProducer) = do
+
+      let handleBarEventInput = liftIO $ runEffect $ barEventProducer >-> eventConsumer
+      liftIO $ void $ forkFinally handleBarEventInput (\result -> hPutStrLn stderr $ "An event input handler failed: " <> show result)
+
+      let handleBarOutput = liftIO $ runEffect $ blockOutputProducer >-> filterDuplicates >-> barOutputConsumer
+      liftIO $ void $ forkFinally handleBarOutput (\result -> hPutStrLn stderr $ "A bar output handler failed: " <> show result)

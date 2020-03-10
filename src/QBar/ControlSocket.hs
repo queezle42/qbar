@@ -5,6 +5,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE InstanceSigs #-}
 
 module QBar.ControlSocket where
 
@@ -25,7 +26,7 @@ import Data.Text.Lazy (pack)
 import qualified Data.Text.Lazy as T
 import Network.Socket
 import Pipes
-import Pipes.Concurrent as PC (Output, spawn', unbounded, fromInput, send, atomically)
+import Pipes.Concurrent as PC (Output, spawn, spawn', unbounded, newest, toOutput, fromInput, send, atomically)
 import Pipes.Parse
 import qualified Pipes.Prelude as PP
 import Pipes.Aeson (decode, DecodingError)
@@ -43,7 +44,7 @@ class (ToJSON (Up s), FromJSON (Up s), ToJSON (Down s), FromJSON (Down s)) => Is
   streamHandler :: s -> BarIO (Consumer (Up s) IO (), Producer (Down s) IO (), IO ())
   toStreamType :: s -> StreamType
 
-  streamClient :: (MonadIO m) => s -> MainOptions -> m (Consumer (Up s) IO (), Producer (Down s) IO ())
+  streamClient :: s -> MainOptions -> BarIO (Consumer (Up s) IO (), Producer (Down s) IO ())
   streamClient s options@MainOptions{verbose} = do
     sock <- liftIO $ connectIpcSocket options
     runEffect (encode (StartStream $ toStreamType s) >-> toSocket sock)
@@ -93,9 +94,10 @@ decodeStreamSafe MainOptions{verbose} inputStream = decodeStream inputStream >->
             Right v -> yield v >> failOnDecodingError'
 
 
-data StreamType = BlockStreamType BlockStream
+data StreamType = BlockStreamType BlockStream | MirrorStreamType MirrorStream
 mapStreamType :: StreamType -> (forall a. IsStream a => a -> b) -> b
 mapStreamType (BlockStreamType a) f = f a
+mapStreamType (MirrorStreamType a) f = f a
 
 
 data BlockStream = BlockStream
@@ -103,6 +105,7 @@ instance IsStream BlockStream where
   type Up BlockStream = [BlockOutput]
   type Down BlockStream = BlockEvent
   toStreamType = BlockStreamType
+  streamHandler :: BlockStream -> BarIO (Consumer [BlockOutput] IO (), Producer BlockEvent IO (), IO ())
   streamHandler _ = do
     (cache, updateCacheC, sealCache) <- newCache'
     (eventOutput, eventInput, eventSeal) <- liftIO $ spawn' unbounded
@@ -134,6 +137,21 @@ instance IsStream BlockStream where
 
       updateBarP :: Bar -> Pipe a a IO ()
       updateBarP bar = forever $ await >>= yield >> liftIO (updateBarDefault' bar)
+
+
+data MirrorStream = MirrorStream
+instance IsStream MirrorStream where
+  type Up MirrorStream = BlockEvent
+  type Down MirrorStream = [BlockOutput]
+  toStreamType = MirrorStreamType
+  streamHandler :: MirrorStream -> BarIO (Consumer BlockEvent IO (), Producer [BlockOutput] IO (), IO ())
+  streamHandler _ = do
+    (eventOutput, eventInput, eventSeal) <- liftIO $ spawn' unbounded
+    (blockOutput, blockInput, blockSeal) <- liftIO $ spawn' $ newest 1
+    let seal = atomically $ eventSeal >> blockSeal
+
+    attachBarOutput (toOutput blockOutput, fromInput eventInput)
+    return (toOutput eventOutput, fromInput blockInput, seal)
 
 
 data Request = Command Command | StartStream StreamType
@@ -181,6 +199,7 @@ $(deriveJSON defaultOptions ''Command)
 $(deriveJSON defaultOptions ''CommandResult)
 $(deriveJSON defaultOptions ''StreamType)
 $(deriveJSON defaultOptions ''BlockStream)
+$(deriveJSON defaultOptions ''MirrorStream)
 
 sendIpc :: Command -> MainOptions -> IO ()
 sendIpc command options@MainOptions{verbose} = do
@@ -201,6 +220,40 @@ sendIpc command options@MainOptions{verbose} = do
 
 sendBlockStream :: BarIO () -> MainOptions -> IO ()
 sendBlockStream loadBlocks options = runBarHost (streamClient BlockStream options) loadBlocks
+
+addServerMirrorStream :: MainOptions -> BarIO ()
+addServerMirrorStream options = do
+  (blockEventConsumer, blockOutputProducer) <- streamClient MirrorStream options
+
+  (eventOutput, eventInput) <- liftIO $ spawn unbounded
+  bar <- askBar
+
+  task <- liftIO $ async $ runEffect $ fromInput eventInput >-> blockEventConsumer
+  liftIO $ link task
+  prefix <- liftIO $ (<> "_") <$> randomIdentifier
+  addBlockCache $ newCacheIO (blockOutputProducer >-> updateBarP bar >-> attachHandlerP eventOutput prefix)
+  where
+    attachHandlerP :: Output BlockEvent -> Text -> Pipe [BlockOutput] [BlockState] IO ()
+    attachHandlerP eventOutput prefix = attachHandlerP'
+      where
+        attachHandlerP' :: Pipe [BlockOutput] [BlockState] IO ()
+        attachHandlerP' = do
+          outputs <- await
+          yield $ map (\o -> maybe (noHandler o) (attachHandler o) (_blockName o)) outputs
+          attachHandlerP'
+        noHandler :: BlockOutput -> BlockState
+        noHandler output = Just (output, Nothing)
+        attachHandler :: BlockOutput -> Text -> BlockState
+        attachHandler output blockName' = Just (output {_blockName = Just prefixedName}, Just patchedEvent)
+          where
+            patchedEvent :: BlockEventHandler
+            patchedEvent event = liftIO . atomically . void $ PC.send eventOutput $ event {name = blockName'}
+            prefixedName :: Text
+            prefixedName = prefix <> blockName'
+
+    updateBarP :: Bar -> Pipe a a IO ()
+    updateBarP bar = forever $ await >>= yield >> liftIO (updateBarDefault' bar)
+
 
 
 listenUnixSocketAsync :: MainOptions -> Bar -> CommandHandler -> IO (Async ())
@@ -246,7 +299,6 @@ listenUnixSocket options@MainOptions{verbose} bar commandHandler = do
 
     handleRequest :: Producer ByteString IO () -> Consumer ByteString IO () -> Request -> BarIO ()
     handleRequest _leftovers responseConsumer (Command command) = liftIO $ runEffect (handleCommand command >-> responseConsumer)
-    --handleRequest leftovers responseConsumer StartBlockStream = blockStreamHandler options leftovers responseConsumer
     handleRequest leftovers responseConsumer (StartStream streamType) = mapStreamType streamType $ \s -> handleByteStream s options leftovers responseConsumer
 
     handleCommand :: Command -> Producer ByteString IO ()

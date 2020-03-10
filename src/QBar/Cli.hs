@@ -39,16 +39,30 @@ mainParser = do
 barCommandParser :: Parser (MainOptions -> IO ())
 barCommandParser = hsubparser (
     command "server" (info serverCommandParser (progDesc "Start a new server.")) <>
+    command "mirror" (info mirrorCommandParser (progDesc "Mirror the output of a running server.")) <>
     command "pipe" (info pipeClientParser (progDesc "Redirects the stdin of this process to a running bar.")) <>
     command "theme" (info themeCommandParser (progDesc "Change the theme of the running qbar server."))
   )
 
 serverCommandParser :: Parser (MainOptions -> IO ())
 serverCommandParser = hsubparser (
-    command "swaybar" (info (runBarServer <$> barConfigurationParser) (progDesc "Start a new server for swaybar. Should be called by swaybar.")) <>
-    command "i3bar" (info (runBarServer <$> barConfigurationParser) (progDesc "Start a new server for i3bar. Should be called by i3bar.")) <>
+    command "swaybar" (info (runBarServer <$> barConfigurationParser) (progDesc "Start a new server. Should be called by swaybar.")) <>
+    command "i3bar" (info (runBarServer <$> barConfigurationParser) (progDesc "Start a new server. Should be called by i3bar.")) <>
     command "send" (info (sendBlockStream <$> barConfigurationParser) (progDesc "Run blocks on this process but send them to another qbar server."))
   )
+  where
+    barConfigurationParser :: Parser (BarIO ())
+    barConfigurationParser = sequence_ <$> some blockParser
+
+mirrorCommandParser :: Parser (MainOptions -> IO ())
+mirrorCommandParser = hsubparser (
+    command "swaybar" (info (runBarServerMirror <$> barConfigurationParser) (progDesc "Mirror the output of another server. Should be called by swaybar.")) <>
+    command "i3bar" (info (runBarServerMirror <$> barConfigurationParser) (progDesc "Mirror the output of another server. Should be called by i3bar."))
+  )
+  where
+    barConfigurationParser :: Parser (BarIO ())
+    barConfigurationParser = sequence_ <$> many blockParser
+
 
 themeCommandParser :: Parser (MainOptions -> IO ())
 themeCommandParser = sendIpc . SetTheme <$> strArgument (metavar "THEME" <> completeWith (map T.unpack themeNames))
@@ -57,11 +71,6 @@ pipeClientParser :: Parser (MainOptions -> IO ())
 pipeClientParser = do
   events <- switch $ long "events" <> short 'e' <> help "Also encode events to stdout. Every event will be a JSON-encoded line."
   pure $ runPipeClient events
-
-barConfigurationParser :: Parser (BarIO ())
-barConfigurationParser = do
-  blocks <- some blockParser
-  pure $ sequence_ blocks
 
 blockParser :: Parser (BarIO ())
 blockParser =

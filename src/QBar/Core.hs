@@ -73,7 +73,8 @@ type BarIO = SafeT (ReaderT Bar IO)
 data Bar = Bar {
   requestBarUpdate :: BlockUpdateReason -> IO (),
   newBlockChan :: TChan BlockCache,
-  barSleepScheduler :: SleepScheduler
+  barSleepScheduler :: SleepScheduler,
+  attachBarOutputInternal :: (Consumer [BlockOutput] IO (), Producer BlockEvent IO ()) -> IO ()
 }
 instance HasSleepScheduler BarIO where
   askSleepScheduler = barSleepScheduler <$> askBar
@@ -150,6 +151,20 @@ newCache input = newCacheInternal =<< newCache''
       cache
       where
         updateTask :: BarIO ()
+        updateTask = do
+          runEffect (input >-> forever (await >>= liftIO . update))
+          liftIO seal
+
+-- |Creates a new cache from a producer (over the IO monad) that automatically seals itself when the producer terminates.
+newCacheIO :: Producer [BlockState] IO () -> BlockCache
+newCacheIO input = newCacheInternal =<< newCache''
+  where
+    newCacheInternal :: (BlockCache, [BlockState] -> IO Bool, IO ()) -> BlockCache
+    newCacheInternal (cache, update, seal) = do
+      liftIO $ link =<< async updateTask
+      cache
+      where
+        updateTask :: IO ()
         updateTask = do
           runEffect (input >-> forever (await >>= liftIO . update))
           liftIO seal
