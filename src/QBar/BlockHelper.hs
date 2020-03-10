@@ -89,7 +89,7 @@ data SignalBlockConfiguration c p = SignalBlockConfiguration {
   signalThread :: Maybe (c -> (p -> IO ()) -> BarIO ()),
   signalBlock :: c -> SignalBlock p,
   interval :: Maybe Interval,
-  finalize :: c -> IO ()
+  finalize :: c -> BarIO ()
 }
 
 runSignalBlockConfiguration :: forall c p. SignalBlockConfiguration c p -> Block
@@ -118,7 +118,8 @@ runSignalBlockConfiguration SignalBlockConfiguration{initialize, signalThread, s
       liftIO $ do
         cancel userTask
         cancel intervalTask
-        finalize context
+
+      liftBarIO $ finalize context
 
       exitBlock
 
