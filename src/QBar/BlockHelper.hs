@@ -10,11 +10,11 @@ import QBar.Time
 import Control.Concurrent.Async
 import qualified Control.Concurrent.Event as Event
 import Control.Concurrent.STM.TChan
+import Control.Monad.State (StateT, evalStateT, get, put)
 import Data.Either (isRight)
 import Pipes
-import Pipes.Core
 import Pipes.Concurrent
-
+import Pipes.Core
 
 data Signal a = RegularSignal | UserSignal a | EventSignal BlockEvent
   deriving (Show, Eq)
@@ -130,24 +130,43 @@ runSignalBlockConfiguration SignalBlockConfiguration{initialize, signalThread, s
           Event.set signalEvent
 
         signalPipe :: Proxy (Signal p) BlockUpdate () BlockUpdate BarIO ExitBlock
-        signalPipe = forever $ do
+        signalPipe = do
+          initial <- request RegularSignal
+          yield initial
+          evalStateT stateSignalPipe initial
+        stateSignalPipe :: StateT BlockUpdate (Proxy (Signal p) BlockUpdate () BlockUpdate BarIO) ExitBlock
+        stateSignalPipe = forever $ do
           -- Handle all queued events
           eventHandled <- sendQueuedEvents
 
           -- If there was no queued event signal a regular event
-          unless eventHandled $ yield =<< request RegularSignal
+          unless eventHandled $ outputAndStore RegularSignal
 
           -- Wait for next event
           liftIO $ Event.wait signalEvent
           liftIO $ Event.clear signalEvent
 
           where
-            sendQueuedEvents :: Proxy (Signal p) BlockUpdate () BlockUpdate BarIO Bool
+            sendQueuedEvents :: StateT BlockUpdate (Proxy (Signal p) BlockUpdate () BlockUpdate BarIO) Bool
             sendQueuedEvents = do
               maybeSignal <- liftIO . atomically $ tryReadTChan signalChan
               case maybeSignal of
-                Just signal -> (yield =<< request signal) >> sendQueuedEvents >> return True
+                Just signal -> do
+                  case signal of
+                    EventSignal _ -> do
+                      (state, _) <- get
+                      lift $ yield (invalidateBlockState state, UserUpdate)
+                    _ -> return ()
+                  outputAndStore signal
+                  void $ sendQueuedEvents
+                  return True
                 Nothing -> return False
+
+            outputAndStore :: Signal p -> StateT BlockUpdate (Proxy (Signal p) BlockUpdate () BlockUpdate BarIO) ()
+            outputAndStore signal = do
+              value <- lift $ request signal
+              put value
+              lift $ yield value
 
 
         intervalTimer :: BarIO ()
@@ -173,8 +192,6 @@ runSignalBlockConfiguration SignalBlockConfiguration{initialize, signalThread, s
             signalEventHandler event = do
               liftIO . atomically $ writeTChan signalChan $ EventSignal event
               liftIO $ Event.set signalEvent
-
-
 
 
 -- |Converts a 'PollBlock' to a 'Block' by running it whenever the 'defaultInterval' is triggered.
