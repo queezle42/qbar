@@ -148,6 +148,7 @@ barServerWithSocket options = do
   return (blockConsumer, eventProducer)
   where
     commandHandler :: (Theme -> IO ()) -> Command -> IO CommandResult
+    commandHandler _ CheckServer = return Success
     commandHandler setTheme' (SetTheme name) =
       case findTheme name of
         Left err -> return $ Error err

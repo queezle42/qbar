@@ -15,9 +15,9 @@ import QBar.Core
 import QBar.Host
 import QBar.Util
 
-import Control.Exception (SomeException, handle)
 import Control.Concurrent (forkFinally)
 import Control.Concurrent.Async
+import Control.Exception (SomeException, handle, catch)
 import Data.Aeson (FromJSON, ToJSON)
 import Data.Aeson.TH
 import qualified Data.ByteString.Char8 as BSC
@@ -25,6 +25,7 @@ import System.FilePath ((</>))
 import System.IO
 import Data.Text.Lazy (pack)
 import qualified Data.Text.Lazy as T
+import qualified Data.Text.Lazy.IO as T
 import Network.Socket
 import Pipes
 import Pipes.Concurrent as PC (Output, spawn, spawn', unbounded, newest, toOutput, fromInput, send, atomically)
@@ -157,7 +158,7 @@ instance IsStream MirrorStream where
 
 data Request = Command Command | StartStream StreamType
 
-data Command = SetTheme T.Text
+data Command = SetTheme T.Text | CheckServer
   deriving Show
 
 data CommandResult = Success | Error Text
@@ -204,20 +205,32 @@ $(deriveJSON defaultOptions ''MirrorStream)
 
 sendIpc :: Command -> MainOptions -> IO ()
 sendIpc command options@MainOptions{verbose} = do
-  let request = Command command
-  sock <- connectIpcSocket options
-  runEffect $ encode request >-> toSocket sock
+  result <- sendIpc' command options
+  case result of
+    Left err -> T.hPutStrLn stderr err
+    Right () -> when verbose $ hPutStrLn stderr "Success"
 
-  decodeResult <- evalStateT decode $ fromSocket sock 4096
-  maybe exitEmptyStream (either exitInvalidResult showResponse) decodeResult
+sendIpc' :: Command -> MainOptions -> IO (Either Text ())
+sendIpc' command options = catch sendCommand handleException
   where
-    exitEmptyStream :: IO ()
-    exitEmptyStream = hPutStrLn stderr "Empty stream"
-    exitInvalidResult :: DecodingError -> IO ()
-    exitInvalidResult = hPrint stderr
-    showResponse :: CommandResult -> IO ()
-    showResponse Success = when verbose $ hPutStrLn stderr "Success"
-    showResponse (Error message) = hPrint stderr message
+    sendCommand :: IO (Either Text ())
+    sendCommand = do
+      sock <- connectIpcSocket options
+      runEffect $ encode (Command command) >-> toSocket sock
+
+      decodeResult <- evalStateT decode $ fromSocket sock 4096
+      return $ maybe onEmptyStream (either onInvalidResult showResponse) decodeResult
+
+    handleException :: SomeException -> IO (Either Text ())
+    handleException = return . Left . T.pack . show
+    onEmptyStream :: Either Text ()
+    onEmptyStream = Left "Empty stream"
+    onInvalidResult :: DecodingError -> Either Text ()
+    onInvalidResult = Left . T.pack . show
+    showResponse :: CommandResult -> Either Text ()
+    showResponse Success = Right ()
+    showResponse (Error message) = Left message
+
 
 sendBlockStream :: BarIO () -> MainOptions -> IO ()
 sendBlockStream loadBlocks options = runBarHost (streamClient BlockStream options) loadBlocks
@@ -263,22 +276,33 @@ listenUnixSocketAsync options bar commandHandler = async $ listenUnixSocket opti
 listenUnixSocket :: MainOptions -> Bar -> CommandHandler -> IO ()
 listenUnixSocket options@MainOptions{verbose} bar commandHandler = do
   socketPath <- ipcSocketAddress options
-  hPutStrLn stderr $ "Creating control socket at " <> socketPath
   socketExists <- doesFileExist socketPath
-  when socketExists $ removeFile socketPath
-  sock <- socket AF_UNIX Stream defaultProtocol
-
-#if MIN_VERSION_network(3,0,0)
-  withFdSocket sock setCloseOnExecIfNeeded
-#else
-  setCloseOnExecIfNeeded $ fdSocket sock
-#endif
-  bind sock (SockAddrUnix socketPath)
-  listen sock 5
-  forever $ do
-    (conn, _) <- accept sock
-    void $ forkFinally (socketHandler conn) (handleSocketResult conn)
+  if socketExists
+    then do
+      socketTestResult <- sendIpc' CheckServer options
+      case socketTestResult of
+        Right _ -> hPutStrLn stderr $ "Could not create control socket at " <> socketPath <> ": another server is already running"
+        Left _ -> do
+          removeFile socketPath
+          listenUnixSocket' socketPath
+    else
+      listenUnixSocket' socketPath
   where
+    listenUnixSocket' :: FilePath -> IO b
+    listenUnixSocket' socketPath = do
+      hPutStrLn stderr $ "Creating control socket at " <> socketPath
+      sock <- socket AF_UNIX Stream defaultProtocol
+#if MIN_VERSION_network(3,0,0)
+      withFdSocket sock setCloseOnExecIfNeeded
+#else
+      setCloseOnExecIfNeeded $ fdSocket sock
+#endif
+      bind sock (SockAddrUnix socketPath)
+      listen sock 5
+      forever $ do
+        (conn, _) <- accept sock
+        void $ forkFinally (socketHandler conn) (handleSocketResult conn)
+
     handleSocketResult :: Socket -> Either SomeException () -> IO ()
     handleSocketResult conn (Left err) = do
       when verbose $ hPutStrLn stderr $ "Ipc connection closed with error " <> show err
