@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -266,7 +267,12 @@ listenUnixSocket options@MainOptions{verbose} bar commandHandler = do
   socketExists <- doesFileExist socketPath
   when socketExists $ removeFile socketPath
   sock <- socket AF_UNIX Stream defaultProtocol
+
+#if MIN_VERSION_network(3,0,0)
   withFdSocket sock setCloseOnExecIfNeeded
+#else
+  setCloseOnExecIfNeeded $ fdSocket sock
+#endif
   bind sock (SockAddrUnix socketPath)
   listen sock 5
   forever $ do
