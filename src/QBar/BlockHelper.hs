@@ -157,7 +157,7 @@ runSignalBlockConfiguration SignalBlockConfiguration{initialize, signalThread, s
                       lift $ yield (invalidateBlockState state, EventUpdate)
                     _ -> return ()
                   outputAndStore signal
-                  void $ sendQueuedEvents
+                  void sendQueuedEvents
                   return True
                 Nothing -> return False
 
