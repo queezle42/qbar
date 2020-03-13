@@ -1,5 +1,4 @@
 {-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE TupleSections #-}
 
 module QBar.BlockHelper where
 
@@ -19,33 +18,27 @@ import Pipes.Core
 data Signal a = RegularSignal | UserSignal a | EventSignal BlockEvent
   deriving (Show, Eq)
 
-type SignalBlock a = (Signal a -> Server (Signal a) BlockUpdate BarIO ExitBlock)
+type SignalBlock a = (Signal a -> Server (Signal a) (Maybe BlockOutput) BarIO ExitBlock)
 
 -- |Block that 'respond's with an update whenever it receives a 'PollSignal'.
-type PollBlock' = Server PollSignal BlockUpdate BarIO
-type PollBlock = Server PollSignal BlockUpdate BarIO ExitBlock
+type PollBlock = Server PollSignal (Maybe BlockOutput) BarIO ExitBlock
+type PollBlock' = Server PollSignal (Maybe BlockOutput) BarIO
 data PollSignal = PollSignal
 
-respondBlockUpdate :: BlockOutput -> Server' (Signal s) BlockUpdate BarIO (Signal s)
-respondBlockUpdate blockOutput = respond (Just (blockOutput, Nothing), DefaultUpdate)
-
-respondBlockUpdate' :: BlockEventHandler -> BlockOutput -> Server' (Signal s) BlockUpdate BarIO (Signal s)
-respondBlockUpdate' blockEventHandler blockOutput = respond (Just (blockOutput, Just blockEventHandler), PollUpdate)
+respondBlockUpdate :: BlockOutput -> Server' (Signal s) (Maybe BlockOutput) BarIO (Signal s)
+respondBlockUpdate blockOutput = respond $ Just blockOutput
 
 -- |Update a block by removing the current output
-respondEmptyBlockUpdate :: Server' (Signal s) BlockUpdate BarIO (Signal s)
-respondEmptyBlockUpdate = respond (Nothing, PollUpdate)
+respondEmptyBlockUpdate :: Server' (Signal s) (Maybe BlockOutput) BarIO (Signal s)
+respondEmptyBlockUpdate = respond Nothing
 
 
-yieldBlockUpdate :: BlockOutput -> Server' PollSignal BlockUpdate BarIO ()
-yieldBlockUpdate blockOutput = void . respond $ (Just (blockOutput, Nothing), PollUpdate)
-
-yieldBlockUpdate' :: BlockEventHandler -> BlockOutput -> Server' PollSignal BlockUpdate BarIO ()
-yieldBlockUpdate' blockEventHandler blockOutput = void . respond $ (Just (blockOutput, Just blockEventHandler), PollUpdate)
+yieldBlockUpdate :: BlockOutput -> Server' PollSignal (Maybe BlockOutput) BarIO ()
+yieldBlockUpdate blockOutput = void . respond $ Just blockOutput
 
 -- |Update a block by removing the current output
-yieldEmptyBlockUpdate :: Server' PollSignal BlockUpdate BarIO ()
-yieldEmptyBlockUpdate = void . respond $ (Nothing, PollUpdate)
+yieldEmptyBlockUpdate :: Server' PollSignal (Maybe BlockOutput) BarIO ()
+yieldEmptyBlockUpdate = void . respond $ Nothing
 
 
 runSignalBlock :: forall a. Maybe Interval -> Maybe ((a -> IO ()) -> BarIO ()) -> SignalBlock a -> Block
@@ -58,18 +51,18 @@ runSignalBlock maybeInterval maybeSignalSourceThread signalBlock' = runSignalBlo
 }
 
 
-runSignalBlockFn :: forall a. Maybe Interval -> ((a -> IO ()) -> BarIO ()) -> ((a, Maybe BlockEvent) -> BarIO BlockState) -> Block
+runSignalBlockFn :: forall a. Maybe Interval -> ((a -> IO ()) -> BarIO ()) -> ((a, Maybe BlockEvent) -> BarIO (Maybe BlockOutput)) -> Block
 runSignalBlockFn maybeInterval signalSourceThread renderFn = runSignalBlock maybeInterval (Just signalSourceThread) signalBlock
   where
-    signalBlock :: (Signal a -> Server (Signal a) BlockUpdate BarIO ExitBlock)
+    signalBlock :: SignalBlock a
     signalBlock (UserSignal value) = signalBlock' value (UserSignal value)
     signalBlock _ = signalBlock =<< respondEmptyBlockUpdate
-    signalBlock' :: a -> (Signal a -> Server (Signal a) BlockUpdate BarIO ExitBlock)
-    signalBlock' state RegularSignal = signalBlock' state =<< respond =<< (, PollUpdate) <$> lift (renderFn (state, Nothing))
-    signalBlock' _ (UserSignal value) = signalBlock' value =<< respond =<< (, DefaultUpdate) <$> lift (renderFn (value, Nothing))
-    signalBlock' state (EventSignal event) = signalBlock' state =<< respond =<< (, DefaultUpdate) <$> lift (renderFn (state, Just event))
+    signalBlock' :: a -> SignalBlock a
+    signalBlock' state RegularSignal = signalBlock' state =<< respond =<< lift (renderFn (state, Nothing))
+    signalBlock' _ (UserSignal value) = signalBlock' value =<< respond =<< lift (renderFn (value, Nothing))
+    signalBlock' state (EventSignal event) = signalBlock' state =<< respond =<< lift (renderFn (state, Just event))
 
-runSignalBlockFn' :: Maybe Interval -> (Maybe BlockEvent -> BarIO BlockState) -> Block
+runSignalBlockFn' :: Maybe Interval -> (Maybe BlockEvent -> BarIO (Maybe BlockOutput)) -> Block
 runSignalBlockFn' maybeInterval renderFn = runSignalBlockConfiguration $ SignalBlockConfiguration {
   initialize = const $ return (),
   signalThread = Nothing,
@@ -78,9 +71,9 @@ runSignalBlockFn' maybeInterval renderFn = runSignalBlockConfiguration $ SignalB
   finalize = return
 }
   where
-    eventBlock :: (Signal a -> Server (Signal a) BlockUpdate BarIO ExitBlock)
-    eventBlock (EventSignal event) = eventBlock =<< respond =<< (, DefaultUpdate) <$> lift (renderFn (Just event))
-    eventBlock _ = eventBlock =<< respond =<< (, PollUpdate) <$> lift (renderFn Nothing)
+    eventBlock :: SignalBlock a
+    eventBlock (EventSignal event) = eventBlock =<< respond =<< lift (renderFn (Just event))
+    eventBlock _ = eventBlock =<< respond =<< lift (renderFn Nothing)
 
 
 
@@ -111,7 +104,7 @@ runSignalBlockConfiguration SignalBlockConfiguration{initialize, signalThread, s
       intervalTask <- liftBarIO $ barAsync intervalTimer
 
       -- Run block
-      void (signalBlock context +>> signalPipe >-> attachEventHandlerP)
+      void (signalBlock context +>> signalPipe)
 
       -- Cancel threads when the block terminates
       -- TODO: use bracketP?
@@ -129,12 +122,18 @@ runSignalBlockConfiguration SignalBlockConfiguration{initialize, signalThread, s
           liftIO . atomically $ writeTChan signalChan $ UserSignal value
           Event.set signalEvent
 
-        signalPipe :: Proxy (Signal p) BlockUpdate () BlockUpdate BarIO ExitBlock
+        signalPipe :: Proxy (Signal p) (Maybe BlockOutput) () BlockUpdate BarIO ExitBlock
         signalPipe = do
           initial <- request RegularSignal
-          yield initial
-          evalStateT stateSignalPipe initial
-        stateSignalPipe :: StateT BlockUpdate (Proxy (Signal p) BlockUpdate () BlockUpdate BarIO) ExitBlock
+          let initialUpdate = (mkBlockStateWithHandler initial, PollUpdate)
+          yield initialUpdate
+          evalStateT stateSignalPipe initialUpdate
+
+        mkBlockStateWithHandler :: Maybe BlockOutput -> BlockState
+        mkBlockStateWithHandler Nothing = Nothing
+        mkBlockStateWithHandler (Just output) = Just (output, Just signalEventHandler)
+
+        stateSignalPipe :: StateT BlockUpdate (Proxy (Signal p) (Maybe BlockOutput) () BlockUpdate BarIO) ExitBlock
         stateSignalPipe = forever $ do
           -- Handle all queued events
           eventHandled <- sendQueuedEvents
@@ -147,7 +146,7 @@ runSignalBlockConfiguration SignalBlockConfiguration{initialize, signalThread, s
           liftIO $ Event.clear signalEvent
 
           where
-            sendQueuedEvents :: StateT BlockUpdate (Proxy (Signal p) BlockUpdate () BlockUpdate BarIO) Bool
+            sendQueuedEvents :: StateT BlockUpdate (Proxy (Signal p) (Maybe BlockOutput) () BlockUpdate BarIO) Bool
             sendQueuedEvents = do
               maybeSignal <- liftIO . atomically $ tryReadTChan signalChan
               case maybeSignal of
@@ -162,11 +161,17 @@ runSignalBlockConfiguration SignalBlockConfiguration{initialize, signalThread, s
                   return True
                 Nothing -> return False
 
-            outputAndStore :: Signal p -> StateT BlockUpdate (Proxy (Signal p) BlockUpdate () BlockUpdate BarIO) ()
+            outputAndStore :: Signal p -> StateT BlockUpdate (Proxy (Signal p) (Maybe BlockOutput) () BlockUpdate BarIO) ()
             outputAndStore signal = do
-              value <- lift $ request signal
-              put value
-              lift $ yield value
+              maybeOutput <- lift $ request signal
+              let update = (mkBlockStateWithHandler maybeOutput, signalToReason signal)
+              put update
+              lift $ yield update
+
+            signalToReason :: Signal a -> BlockUpdateReason
+            signalToReason (UserSignal _) = DefaultUpdate
+            signalToReason (EventSignal _) = UserUpdate
+            signalToReason RegularSignal = PollUpdate
 
 
         intervalTimer :: BarIO ()
@@ -178,20 +183,10 @@ runSignalBlockConfiguration SignalBlockConfiguration{initialize, signalThread, s
               liftIO $ Event.set signalEvent
             Nothing -> return ()
 
-        attachEventHandlerP :: Pipe BlockUpdate BlockUpdate BarIO ExitBlock
-        attachEventHandlerP = forever $ do
-          (state, reason) <- await
-          let state' = if hasEventHandler state
-              -- If state already has an event handler, we do not attach another one
-              then state
-              -- Attach a click handler that will trigger a block update
-              else updateEventHandler signalEventHandler state
-          yield (state', reason)
-          where
-            signalEventHandler :: BlockEventHandler
-            signalEventHandler event = do
-              liftIO . atomically $ writeTChan signalChan $ EventSignal event
-              liftIO $ Event.set signalEvent
+        signalEventHandler :: BlockEventHandler
+        signalEventHandler event = do
+          liftIO . atomically $ writeTChan signalChan $ EventSignal event
+          liftIO $ Event.set signalEvent
 
 
 -- |Converts a 'PollBlock' to a 'Block' by running it whenever the 'defaultInterval' is triggered.
@@ -200,34 +195,41 @@ runPollBlock = runPollBlock' defaultInterval
 
 -- |Converts a 'PollBlock' to a 'Block' by running it whenever the provided 'Interval' is triggered.
 runPollBlock' :: Interval -> PollBlock -> Block
-runPollBlock' interval pb = pb >>~ addPollSignal >-> sleepToNextInterval
+runPollBlock' interval pb = do
+  event <- liftIO Event.new
+  pb >>~ addPollSignal >-> sleepToNextInterval event
   where
-    addPollSignal :: BlockUpdate -> Proxy PollSignal BlockUpdate () BlockUpdate BarIO ExitBlock
+    addPollSignal :: a -> Proxy PollSignal a () a BarIO ExitBlock
     addPollSignal = respond >=> const (request PollSignal) >=> addPollSignal
 
-    sleepToNextInterval :: Pipe BlockUpdate BlockUpdate BarIO ExitBlock
-    sleepToNextInterval = do
-      event <- liftIO Event.new
-      forever $ do
-        (state, reason) <- await
-        if hasEventHandler state
-          then do
-            -- If state already has an event handler, we do not attach another one
-            yield (state, reason)
-            sleepUntilInterval interval
-          else do
-            -- Attach a click handler that will trigger a block update
-            yield (updateEventHandler (triggerOnClick event) state, reason)
+    sleepToNextInterval :: Event.Event -> Pipe (Maybe BlockOutput) BlockUpdate BarIO ExitBlock
+    sleepToNextInterval event = sleepToNextInterval' False
+      where
+        sleepToNextInterval' :: Bool -> Pipe (Maybe BlockOutput) BlockUpdate BarIO ExitBlock
+        sleepToNextInterval' isEvent = do
+          maybeOutput <- await
+          -- Attach a click handler that will trigger a block update
+          let state = mkBlockStateWithHandler (triggerOnClick event) maybeOutput
+          yield (state, if isEvent then UserUpdate else PollUpdate)
 
-            scheduler <- askSleepScheduler
-            result <- liftIO $ do
-              timerTask <- async $ sleepUntilInterval' scheduler defaultInterval
-              eventTask <- async $ Event.wait event
-              waitEitherCancel timerTask eventTask
+          scheduler <- askSleepScheduler
+          result <- liftIO $ do
+            timerTask <- async $ sleepUntilInterval' scheduler interval
+            eventTask <- async $ Event.wait event
+            waitEitherCancel timerTask eventTask
 
-            when (isRight result) $ do
-              liftIO $ Event.clear event
-              yield (invalidateBlockState state, UserUpdate)
+          let isEventNew = isRight result
+
+          when isEventNew $ do
+            liftIO $ Event.clear event
+            yield (invalidateBlockState state, UserUpdate)
+
+          sleepToNextInterval' isEventNew
+
+
+    mkBlockStateWithHandler :: BlockEventHandler -> Maybe BlockOutput -> BlockState
+    mkBlockStateWithHandler _ Nothing = Nothing
+    mkBlockStateWithHandler handler (Just output) = Just (output, Just handler)
 
     triggerOnClick :: Event.Event -> BlockEvent -> BarIO ()
     triggerOnClick event _ = liftIO $ Event.set event
