@@ -53,15 +53,15 @@ getConnectionInfo client connectionObjectPath = do
 
 networkManagerBlock :: Block
 networkManagerBlock = runSignalBlockConfiguration $ SignalBlockConfiguration {
-  initialize = initialize',
-  finalize = finalize',
+  aquire,
+  release,
   signalThread = Nothing,
   signalBlock = networkManagerBlock',
   interval = Just defaultInterval
 }
   where
-    initialize' :: (() -> IO ()) -> BarIO DBus.Client
-    initialize' trigger = liftIO $ do
+    aquire :: (() -> IO ()) -> BarIO DBus.Client
+    aquire trigger = liftIO $ do
       client <- DBus.connectSystem
       let matchRule = DBus.matchAny {
         DBus.matchPath = Just "/org/freedesktop/NetworkManager",
@@ -69,8 +69,8 @@ networkManagerBlock = runSignalBlockConfiguration $ SignalBlockConfiguration {
       }
       void . DBus.addMatch client matchRule $ dbusSignalHandler trigger
       return client
-    finalize' :: DBus.Client -> BarIO ()
-    finalize' = liftIO . DBus.disconnect
+    release :: DBus.Client -> BarIO ()
+    release = liftIO . DBus.disconnect
     networkManagerBlock' :: DBus.Client -> SignalBlock ()
     networkManagerBlock' client = (liftBarIO . networkManagerBlock'' client) >=> respondBlockUpdate >=> networkManagerBlock' client
     networkManagerBlock'' :: DBus.Client -> Signal () -> BarIO BlockOutput

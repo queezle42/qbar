@@ -43,11 +43,11 @@ yieldEmptyBlockUpdate = void . respond $ Nothing
 
 runSignalBlock :: forall a. Maybe Interval -> Maybe ((a -> IO ()) -> BarIO ()) -> SignalBlock a -> Block
 runSignalBlock maybeInterval maybeSignalSourceThread signalBlock' = runSignalBlockConfiguration $ SignalBlockConfiguration {
-  initialize = const $ return (),
+  aquire = const $ return (),
+  release = return,
   signalThread = const <$> maybeSignalSourceThread,
   signalBlock = const signalBlock',
-  interval = maybeInterval,
-  finalize = return
+  interval = maybeInterval
 }
 
 
@@ -64,11 +64,11 @@ runSignalBlockFn maybeInterval signalSourceThread renderFn = runSignalBlock mayb
 
 runSignalBlockFn' :: Maybe Interval -> (Maybe BlockEvent -> BarIO (Maybe BlockOutput)) -> Block
 runSignalBlockFn' maybeInterval renderFn = runSignalBlockConfiguration $ SignalBlockConfiguration {
-  initialize = const $ return (),
+  aquire = const $ return (),
+  release = return,
   signalThread = Nothing,
   signalBlock = const eventBlock,
-  interval = maybeInterval,
-  finalize = return
+  interval = maybeInterval
 }
   where
     eventBlock :: SignalBlock a
@@ -78,15 +78,15 @@ runSignalBlockFn' maybeInterval renderFn = runSignalBlockConfiguration $ SignalB
 
 
 data SignalBlockConfiguration c p = SignalBlockConfiguration {
-  initialize :: (p -> IO ()) -> BarIO c,
+  aquire :: (p -> IO ()) -> BarIO c,
+  release :: c -> BarIO (),
   signalThread :: Maybe (c -> (p -> IO ()) -> BarIO ()),
   signalBlock :: c -> SignalBlock p,
-  interval :: Maybe Interval,
-  finalize :: c -> BarIO ()
+  interval :: Maybe Interval
 }
 
 runSignalBlockConfiguration :: forall c p. SignalBlockConfiguration c p -> Block
-runSignalBlockConfiguration SignalBlockConfiguration{initialize, signalThread, signalBlock, interval, finalize} = do
+runSignalBlockConfiguration SignalBlockConfiguration{aquire, release, signalThread, signalBlock, interval} = do
   -- Initialize
   signalChan <- liftIO newTChanIO
   signalEvent <- liftIO Event.new
@@ -95,7 +95,7 @@ runSignalBlockConfiguration SignalBlockConfiguration{initialize, signalThread, s
   where
     runSignalBlockWithThreadInternal :: TChan (Signal p) -> Event.Event -> Block
     runSignalBlockWithThreadInternal signalChan signalEvent = do
-      context <- lift $ initialize userSignalAction
+      context <- lift $ aquire userSignalAction
       -- Start signalSource thread
       userTask <- liftBarIO $ barAsync $
         case signalThread of
@@ -112,7 +112,7 @@ runSignalBlockConfiguration SignalBlockConfiguration{initialize, signalThread, s
         cancel userTask
         cancel intervalTask
 
-      liftBarIO $ finalize context
+      liftBarIO $ release context
 
       exitBlock
 
