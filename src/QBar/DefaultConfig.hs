@@ -21,7 +21,7 @@ legacyBarConfig :: BarIO ()
 legacyBarConfig = do
   let todo = pollScriptBlock $ blockLocation "todo"
   let networkEnvironment = pollScriptBlock $ blockLocation "network-environment"
-  let ram = (pollScriptBlock $ blockLocation "memory") >-> modify (addIcon "🐏\xFE0E") >-> autoPadding
+  let ram = pollScriptBlock (blockLocation "memory") >-> modify (addIcon "🐏\xFE0E") >-> autoPadding
   let temperature = (pollScriptBlock $ blockLocation "temperature") >-> autoPadding
   let volumeBlock = scriptBlock $ blockLocation "volume-pulseaudio -S -F3"
 

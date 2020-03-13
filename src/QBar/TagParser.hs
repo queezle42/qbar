@@ -55,7 +55,7 @@ tagParser = parser (False, normalImportant)
       let background = listToMaybe . catMaybes $ backgrounds
       void $ char '>'
       content <- T.fromStrict <$> A.takeWhile1 (notInClass "<>")
-      void $ string $ "</span>"
+      void $ string "</span>"
       return $ mkStyledText color background content
       where
         colorAttributeParser :: Text -> Parser Color
@@ -65,11 +65,8 @@ tagParser = parser (False, normalImportant)
           skipSpace
           void $ char '='
           skipSpace
-          value <- (
-              char '\'' *> colorParser <* char '\''
-              <|> char '"' *> colorParser <* char '"'
-            )
-          return value
+          char '\'' *> colorParser <* char '\'' <|>
+            char '"' *> colorParser <* char '"'
 
         colorAttribute :: Parser (Maybe Color, Maybe Color)
         colorAttribute = do

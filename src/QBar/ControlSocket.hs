@@ -55,7 +55,7 @@ class (ToJSON (Up s), FromJSON (Up s), ToJSON (Down s), FromJSON (Down s)) => Is
     return (up, down)
     where
       verbosePrintP :: Pipe ByteString ByteString IO ()
-      verbosePrintP = if verbose then (PP.chain $ BSC.hPutStrLn stderr) else cat
+      verbosePrintP = if verbose then PP.chain $ BSC.hPutStrLn stderr else cat
   handleByteStream :: s -> MainOptions -> Producer ByteString IO () -> Consumer ByteString IO () -> BarIO ()
   handleByteStream s options up down = do
     (handleUp, handleDown, cleanup) <- streamHandler s
