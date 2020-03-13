@@ -140,8 +140,8 @@ filterDuplicates = do
 followupEventWaitTime :: BlockUpdateReason -> Int
 followupEventWaitTime DefaultUpdate = 10000
 followupEventWaitTime PollUpdate = 50000
--- 'followupEventWaitTime' for 'UserUpdate' has to be zero, or blocks would be blocked blocked for this time when sending a 'UserUpdate'.
-followupEventWaitTime UserUpdate = 0
+-- 'followupEventWaitTime' for 'EventUpdate' has to be zero, or blocks would be blocked blocked for this time when sending a 'UserUpdate'.
+followupEventWaitTime EventUpdate = 0
 
 followupEventWaitTimeDefault :: Int
 followupEventWaitTimeDefault = followupEventWaitTime PollUpdate
@@ -153,7 +153,7 @@ requestBarUpdateHandler HostHandle{barUpdateEvent, barUpdatedEvent, followupEven
   signalHost blockUpdateReason
   where
     signalHost :: BlockUpdateReason -> IO ()
-    signalHost UserUpdate = do
+    signalHost EventUpdate = do
       -- Start waiting before triggering the event cannot be missed
       task <- async $ Event.wait barUpdatedEvent
       Event.set barUpdateEvent

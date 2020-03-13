@@ -154,7 +154,7 @@ runSignalBlockConfiguration SignalBlockConfiguration{initialize, signalThread, s
                   case signal of
                     EventSignal _ -> do
                       (state, _) <- get
-                      lift $ yield (invalidateBlockState state, UserUpdate)
+                      lift $ yield (invalidateBlockState state, EventUpdate)
                     _ -> return ()
                   outputAndStore signal
                   void $ sendQueuedEvents
@@ -170,7 +170,7 @@ runSignalBlockConfiguration SignalBlockConfiguration{initialize, signalThread, s
 
             signalToReason :: Signal a -> BlockUpdateReason
             signalToReason (UserSignal _) = DefaultUpdate
-            signalToReason (EventSignal _) = UserUpdate
+            signalToReason (EventSignal _) = EventUpdate
             signalToReason RegularSignal = PollUpdate
 
 
@@ -210,7 +210,7 @@ runPollBlock' interval pb = do
           maybeOutput <- await
           -- Attach a click handler that will trigger a block update
           let state = mkBlockStateWithHandler (triggerOnClick event) maybeOutput
-          yield (state, if isEvent then UserUpdate else PollUpdate)
+          yield (state, if isEvent then EventUpdate else PollUpdate)
 
           scheduler <- askSleepScheduler
           result <- liftIO $ do
@@ -222,7 +222,7 @@ runPollBlock' interval pb = do
 
           when isEventNew $ do
             liftIO $ Event.clear event
-            yield (invalidateBlockState state, UserUpdate)
+            yield (invalidateBlockState state, EventUpdate)
 
           sleepToNextInterval' isEventNew
 

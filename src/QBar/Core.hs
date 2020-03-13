@@ -43,7 +43,7 @@ data ExitBlock = ExitBlock
 type BlockEventHandler = BlockEvent -> BarIO ()
 
 type BlockState = Maybe (BlockOutput, Maybe BlockEventHandler)
-data BlockUpdateReason = DefaultUpdate | PollUpdate | UserUpdate
+data BlockUpdateReason = DefaultUpdate | PollUpdate | EventUpdate
 type BlockUpdate = (BlockState, BlockUpdateReason)
 
 -- |Block that 'yield's an update whenever the block should be changed
