@@ -6,13 +6,13 @@ module QBar.Host where
 import QBar.BlockOutput
 import QBar.Core
 import QBar.Time
+import QBar.Util
 
 import Control.Concurrent (forkIO, forkFinally, threadDelay)
 import Control.Concurrent.Async (async, wait, waitBoth)
 import qualified Control.Concurrent.Event as Event
 import Control.Concurrent.MVar (MVar, newMVar, modifyMVar_, swapMVar)
 import Control.Concurrent.STM.TChan
-import Control.Concurrent.STM.TVar
 import Control.Exception (SomeException, catch)
 import Control.Lens hiding (each, (.=))
 import Control.Monad.STM (atomically)
@@ -199,11 +199,10 @@ runBarHost' initializeBarAction = do
   (eventOutput, eventInput) <- spawn unbounded
 
   -- Create cache for block outputs
-  cache <- (,) <$> newTVarIO [] <*> newBroadcastTChanIO
-  let blockOutputProducer = blockOutputFromCache cache
+  (cacheConsumer, cacheProducer) <- mkBroadcastCacheP []
 
   -- Important: both monads (output producer / event consumer) will be forked whenever a new output connects!
-  let attachBarOutputInternal = attachBarOutputImpl blockOutputProducer (toOutput eventOutput)
+  let attachBarOutputInternal = attachBarOutputImpl cacheProducer (toOutput eventOutput)
 
 
   let requestBarUpdate = requestBarUpdateHandler hostHandle
@@ -217,7 +216,7 @@ runBarHost' initializeBarAction = do
   runBarIO bar initializeBarAction
 
   -- Run blocks and send filtered output to connected clients
-  blockTask <- async $ runEffect $ runBlocks bar hostHandle >-> filterDuplicates >-> blockOutputToCache cache
+  blockTask <- async $ runEffect $ runBlocks bar hostHandle >-> filterDuplicates >-> cacheConsumer
   -- Dispatch incoming events to blocks
   eventTask <- async $ runEffect $ fromInput eventInput >-> eventDispatcher bar eventHandlerListIORef
 
@@ -225,25 +224,6 @@ runBarHost' initializeBarAction = do
   void $ waitBoth blockTask eventTask
 
   where
-    blockOutputToCache :: (TVar [BlockOutput], TChan [BlockOutput]) -> Consumer [BlockOutput] IO ()
-    blockOutputToCache (var, chan) = forever $ do
-      value <- await
-      liftIO . atomically $ do
-        writeTVar var value
-        writeTChan chan value
-
-    -- Monad will be forked when new outputs connect
-    blockOutputFromCache :: (TVar [BlockOutput], TChan [BlockOutput]) -> Producer [BlockOutput] IO ()
-    blockOutputFromCache (var, chan) = do
-      (outputChan, value) <- liftIO . atomically $ do
-        value <- readTVar var
-        outputChan <- dupTChan chan
-        return (outputChan, value)
-
-      yield value
-
-      forever $ yield =<< (liftIO . atomically $ readTChan outputChan)
-
     attachBarOutputImpl :: Producer [BlockOutput] IO () -> Consumer BlockEvent IO () -> (Consumer [BlockOutput] IO (), Producer BlockEvent IO ()) -> IO ()
     attachBarOutputImpl blockOutputProducer eventConsumer (barOutputConsumer, barEventProducer) = do
 

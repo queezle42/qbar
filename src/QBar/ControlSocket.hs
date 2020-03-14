@@ -13,17 +13,17 @@ module QBar.ControlSocket where
 import QBar.BlockOutput
 import QBar.Core
 import QBar.Host
+import QBar.Time
 import QBar.Util
 
 import Control.Concurrent (forkFinally)
 import Control.Concurrent.Async
-import Control.Exception (SomeException, handle, catch)
+import Control.Exception (SomeException, IOException, handle)
 import Data.Aeson (FromJSON, ToJSON)
 import Data.Aeson.TH
 import qualified Data.ByteString.Char8 as BSC
-import System.FilePath ((</>))
-import System.IO
 import Data.Text.Lazy (pack)
+import Data.Time.Clock (getCurrentTime, addUTCTime)
 import qualified Data.Text.Lazy as T
 import qualified Data.Text.Lazy.IO as T
 import Network.Socket
@@ -31,11 +31,14 @@ import Pipes
 import Pipes.Concurrent as PC (Output, spawn, spawn', unbounded, newest, toOutput, fromInput, send, atomically)
 import Pipes.Parse
 import qualified Pipes.Prelude as PP
+import Pipes.Safe (catch)
 import Pipes.Aeson (decode, DecodingError)
 import Pipes.Aeson.Unchecked (encode)
 import Pipes.Network.TCP (fromSocket, toSocket)
 import System.Directory (removeFile, doesFileExist)
 import System.Environment (getEnv)
+import System.FilePath ((</>))
+import System.IO
 
 type CommandHandler = Command -> IO CommandResult
 
@@ -47,8 +50,8 @@ class (ToJSON (Up s), FromJSON (Up s), ToJSON (Down s), FromJSON (Down s)) => Is
   toStreamType :: s -> StreamType
 
   streamClient :: s -> MainOptions -> BarIO (Consumer (Up s) IO (), Producer (Down s) IO ())
-  streamClient s options@MainOptions{verbose} = do
-    sock <- liftIO $ connectIpcSocket options
+  streamClient s options@MainOptions{verbose} = liftIO $ do
+    sock <- connectIpcSocket options
     runEffect (encode (StartStream $ toStreamType s) >-> toSocket sock)
     let up = forever (await >>= encode) >-> verbosePrintP >-> toSocket sock
     let down = decodeStreamSafe options (fromSocket sock 4096 >-> verbosePrintP)
@@ -56,6 +59,7 @@ class (ToJSON (Up s), FromJSON (Up s), ToJSON (Down s), FromJSON (Down s)) => Is
     where
       verbosePrintP :: Pipe ByteString ByteString IO ()
       verbosePrintP = if verbose then PP.chain $ BSC.hPutStrLn stderr else cat
+
   handleByteStream :: s -> MainOptions -> Producer ByteString IO () -> Consumer ByteString IO () -> BarIO ()
   handleByteStream s options up down = do
     (handleUp, handleDown, cleanup) <- streamHandler s
@@ -66,6 +70,40 @@ class (ToJSON (Up s), FromJSON (Up s), ToJSON (Down s), FromJSON (Down s)) => Is
     liftIO $ do
       void $ waitEitherCancel readTask writeTask
       cleanup
+
+data ReconnectMode a = ReconnectNoResend | ReconnectSendLatest a
+
+reconnectClient :: forall up down. ReconnectMode up -> BarIO (Consumer up IO (), Producer down IO ()) -> BarIO (Consumer up IO (), Producer down IO ())
+reconnectClient reconnectMode connectClient = do
+  (upConsumer, upProducer) <- case reconnectMode of
+    ReconnectNoResend  -> liftIO $ mkBroadcastP
+    ReconnectSendLatest initial -> liftIO $ mkBroadcastCacheP initial
+
+  (downOutput, downInput) <- liftIO $ spawn unbounded
+  let downConsumer = toOutput downOutput
+  let downProducer = fromInput downInput
+
+  task <- barAsync $ forever $ do
+    (upStreamConsumer, downStreamProducer) <- connectRetry
+
+    liftIO $ do
+      readTask <- async $ runEffect $ downStreamProducer >-> downConsumer
+      writeTask <- async $ runEffect $ upProducer >-> upStreamConsumer
+      void $ waitEitherCancel readTask writeTask
+
+  liftIO $ link task
+
+  return (upConsumer, downProducer)
+  where
+    connectRetry :: BarIO (Consumer up IO (), Producer down IO ())
+    connectRetry = catch connectClient (\(_ :: IOException) -> liftIO (hPutStrLn stderr "Socket connection failed. Retrying...") >> reconnectDelay >> silentConnectRetry)
+    silentConnectRetry :: BarIO (Consumer up IO (), Producer down IO ())
+    silentConnectRetry = catch connectClient (\(_ :: IOException) -> reconnectDelay >> silentConnectRetry)
+    reconnectDelay :: BarIO ()
+    reconnectDelay = do
+      time <- liftIO getCurrentTime
+      let nextSecond = addUTCTime 1 time
+      sleepUntil nextSecond
 
 
 decodeStreamSafe :: FromJSON v => MainOptions -> Producer ByteString IO () -> Producer v IO ()
@@ -233,11 +271,14 @@ sendIpc' command options = catch sendCommand handleException
 
 
 sendBlockStream :: BarIO () -> MainOptions -> IO ()
-sendBlockStream loadBlocks options = runBarHost (streamClient BlockStream options) loadBlocks
+sendBlockStream loadBlocks options = runBarHost blockStreamClient loadBlocks
+  where
+    blockStreamClient :: BarIO (Consumer [BlockOutput] IO (), Producer BlockEvent IO ())
+    blockStreamClient = reconnectClient (ReconnectSendLatest []) $ streamClient BlockStream options
 
 addServerMirrorStream :: MainOptions -> BarIO ()
 addServerMirrorStream options = do
-  (blockEventConsumer, blockOutputProducer) <- streamClient MirrorStream options
+  (blockEventConsumer, blockOutputProducer) <- reconnectClient ReconnectNoResend $ streamClient MirrorStream options
 
   (eventOutput, eventInput) <- liftIO $ spawn unbounded
   bar <- askBar
