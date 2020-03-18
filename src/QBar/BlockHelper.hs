@@ -9,11 +9,14 @@ import QBar.Time
 import Control.Concurrent.Async
 import qualified Control.Concurrent.Event as Event
 import Control.Concurrent.STM.TChan
+import Control.Concurrent.STM.TVar
+import Control.Monad.Reader (ReaderT)
 import Control.Monad.State (StateT, evalStateT, get, put)
 import Data.Either (isRight)
 import Pipes
 import Pipes.Concurrent
 import Pipes.Core
+import Pipes.Safe (bracket, runSafeT)
 
 data Signal a = RegularSignal | UserSignal a | EventSignal BlockEvent
   deriving (Show, Eq)
@@ -90,36 +93,41 @@ runSignalBlockConfiguration SignalBlockConfiguration{aquire, release, signalThre
   -- Initialize
   signalChan <- liftIO newTChanIO
   signalEvent <- liftIO Event.new
+  isInvalidatedVar <- liftIO $ newTVarIO False
 
-  runSignalBlockWithThreadInternal signalChan signalEvent
+  runSignalBlockWithThreadInternal signalChan signalEvent isInvalidatedVar
   where
-    runSignalBlockWithThreadInternal :: TChan (Signal p) -> Event.Event -> Block
-    runSignalBlockWithThreadInternal signalChan signalEvent = do
-      context <- lift $ aquire userSignalAction
-      -- Start signalSource thread
-      userTask <- liftBarIO $ barAsync $
-        case signalThread of
-          Just signalThread' -> signalThread' context userSignalAction
-          Nothing -> return ()
-      intervalTask <- liftBarIO $ barAsync intervalTimer
-
-      -- Run block
-      void (signalBlock context +>> signalPipe)
-
-      -- Cancel threads when the block terminates
-      -- TODO: use bracketP?
-      liftIO $ do
-        cancel userTask
-        cancel intervalTask
-
-      liftBarIO $ release context
-
+    runSignalBlockWithThreadInternal :: TChan (Signal p) -> Event.Event -> TVar Bool -> Block
+    runSignalBlockWithThreadInternal signalChan signalEvent isInvalidatedVar = do
+      bracket aquire' release' (\(context, _, _) -> void (signalBlock context +>> signalPipe))
       exitBlock
-
       where
+        aquire' :: ReaderT Bar IO (c, Async (), Async ())
+        aquire' = runSafeT $ do
+          context <- aquire userSignalAction
+
+          -- Start signalSource thread
+          userTask <- barAsync $
+            case signalThread of
+              Just signalThread' -> signalThread' context userSignalAction
+              Nothing -> return ()
+          intervalTask <- barAsync intervalTimer
+
+          return (context, userTask, intervalTask)
+
+
+        release' :: (c, Async (), Async ()) -> ReaderT Bar IO ()
+        release' (context, userTask, intervalTask) = do
+          liftIO $ do
+            cancel userTask
+            cancel intervalTask
+
+          runSafeT $ release context
+
+
         userSignalAction :: p -> IO ()
         userSignalAction value = do
-          liftIO . atomically $ writeTChan signalChan $ UserSignal value
+          atomically $ writeTChan signalChan $ UserSignal value
           Event.set signalEvent
 
         signalPipe :: Proxy (Signal p) (Maybe BlockOutput) () BlockUpdate BarIO ExitBlock
@@ -164,7 +172,19 @@ runSignalBlockConfiguration SignalBlockConfiguration{aquire, release, signalThre
             outputAndStore :: Signal p -> StateT BlockUpdate (Proxy (Signal p) (Maybe BlockOutput) () BlockUpdate BarIO) ()
             outputAndStore signal = do
               maybeOutput <- lift $ request signal
-              let update = (mkBlockStateWithHandler maybeOutput, signalToReason signal)
+
+              invalidate <- if isEventSignal signal
+                then do
+                  -- Reset invalidate flag
+                  liftIO . atomically $ writeTVar isInvalidatedVar False
+                  return False
+                else
+                  liftIO . atomically $ readTVar isInvalidatedVar
+
+              let state = mkBlockStateWithHandler maybeOutput
+              let state' = if invalidate then invalidateBlockState state else state
+
+              let update = (state', signalToReason signal)
               put update
               lift $ yield update
 
@@ -172,6 +192,10 @@ runSignalBlockConfiguration SignalBlockConfiguration{aquire, release, signalThre
             signalToReason (UserSignal _) = DefaultUpdate
             signalToReason (EventSignal _) = EventUpdate
             signalToReason RegularSignal = PollUpdate
+
+            isEventSignal :: Signal p -> Bool
+            isEventSignal (EventSignal _) = True
+            isEventSignal _ = False
 
 
         intervalTimer :: BarIO ()
@@ -185,8 +209,14 @@ runSignalBlockConfiguration SignalBlockConfiguration{aquire, release, signalThre
 
         signalEventHandler :: BlockEventHandler
         signalEventHandler event = do
-          liftIO . atomically $ writeTChan signalChan $ EventSignal event
-          liftIO $ Event.set signalEvent
+          wasInvalidated' <- liftIO . atomically $ do
+            wasInvalidated <- readTVar isInvalidatedVar
+            unless wasInvalidated $ do
+              writeTChan signalChan $ EventSignal event
+              writeTVar isInvalidatedVar True
+            return wasInvalidated
+
+          unless wasInvalidated' $ liftIO $ Event.set signalEvent
 
 
 -- |Converts a 'PollBlock' to a 'Block' by running it whenever the 'defaultInterval' is triggered.
