@@ -11,7 +11,7 @@ import qualified Control.Concurrent.Event as Event
 import Control.Concurrent.STM.TChan
 import Control.Concurrent.STM.TVar
 import Control.Monad.Reader (ReaderT)
-import Control.Monad.State (StateT, evalStateT, get, put)
+import Control.Lens
 import Data.Either (isRight)
 import Pipes
 import Pipes.Concurrent
@@ -93,15 +93,33 @@ runSignalBlockConfiguration SignalBlockConfiguration{aquire, release, signalThre
   -- Initialize
   signalChan <- liftIO newTChanIO
   signalEvent <- liftIO Event.new
-  isInvalidatedVar <- liftIO $ newTVarIO False
+  -- renderStateVar: (current BlockUpdate or Nothing when signal block terminated, invalidated)
+  renderStateVar <- liftIO $ newTVarIO (Just (Nothing, PollUpdate), False)
+  -- renderEvent: Signals an update to renderStateVar
+  renderEvent <- liftIO Event.new
 
-  runSignalBlockWithThreadInternal signalChan signalEvent isInvalidatedVar
+  runSignalBlockWithThreadInternal signalChan signalEvent renderStateVar renderEvent
   where
-    runSignalBlockWithThreadInternal :: TChan (Signal p) -> Event.Event -> TVar Bool -> Block
-    runSignalBlockWithThreadInternal signalChan signalEvent isInvalidatedVar = do
-      bracket aquire' release' (\(context, _, _) -> void (signalBlock context +>> signalPipe))
-      exitBlock
+    runSignalBlockWithThreadInternal :: TChan (Signal p) -> Event.Event -> TVar (Maybe BlockUpdate, Bool) -> Event.Event -> Block
+    runSignalBlockWithThreadInternal signalChan signalEvent renderStateVar renderEvent = do
+      generatorTask <- barAsync $ bracket aquire' release' (\(context, _, _) -> runEffect $ void (signalBlock context +>> signalPipe))
+      liftIO $ link generatorTask
+      renderer
       where
+        renderer :: Block
+        renderer = do
+          liftIO $ Event.wait renderEvent
+          liftIO $ Event.clear renderEvent
+
+          currentState <- liftIO . atomically $ readTVar renderStateVar
+          renderer' currentState
+          where
+            renderer' :: (Maybe BlockUpdate, Bool) -> Block
+            renderer' (Just (blockState, reason), invalidated) = do
+              yield $ if invalidated then (invalidateBlockState blockState, reason) else (blockState, reason)
+              renderer
+            renderer' (Nothing, _) = exitBlock
+
         aquire' :: ReaderT Bar IO (c, Async (), Async ())
         aquire' = runSafeT $ do
           context <- aquire userSignalAction
@@ -118,6 +136,9 @@ runSignalBlockConfiguration SignalBlockConfiguration{aquire, release, signalThre
 
         release' :: (c, Async (), Async ()) -> ReaderT Bar IO ()
         release' (context, userTask, intervalTask) = do
+          -- Signal block termination to render thread
+          liftIO . atomically $ modifyTVar renderStateVar (_1 .~ Nothing)
+
           liftIO $ do
             cancel userTask
             cancel intervalTask
@@ -130,63 +151,39 @@ runSignalBlockConfiguration SignalBlockConfiguration{aquire, release, signalThre
           atomically $ writeTChan signalChan $ UserSignal value
           Event.set signalEvent
 
-        signalPipe :: Proxy (Signal p) (Maybe BlockOutput) () BlockUpdate BarIO ExitBlock
-        signalPipe = do
-          initial <- request RegularSignal
-          let initialUpdate = (mkBlockStateWithHandler initial, PollUpdate)
-          yield initialUpdate
-          evalStateT stateSignalPipe initialUpdate
-
         mkBlockStateWithHandler :: Maybe BlockOutput -> BlockState
         mkBlockStateWithHandler Nothing = Nothing
         mkBlockStateWithHandler (Just output) = Just (output, Just signalEventHandler)
 
-        stateSignalPipe :: StateT BlockUpdate (Proxy (Signal p) (Maybe BlockOutput) () BlockUpdate BarIO) ExitBlock
-        stateSignalPipe = forever $ do
+        signalPipe :: Client (Signal p) (Maybe BlockOutput) BarIO ExitBlock
+        signalPipe = forever $ do
           -- Handle all queued events
-          eventHandled <- sendQueuedEvents
+          eventHandled <- sendQueuedSignals
 
           -- If there was no queued event signal a regular event
-          unless eventHandled $ outputAndStore RegularSignal
+          unless eventHandled $ sendSignal RegularSignal
 
           -- Wait for next event
           liftIO $ Event.wait signalEvent
           liftIO $ Event.clear signalEvent
 
           where
-            sendQueuedEvents :: StateT BlockUpdate (Proxy (Signal p) (Maybe BlockOutput) () BlockUpdate BarIO) Bool
-            sendQueuedEvents = do
+            sendQueuedSignals :: Client (Signal p) (Maybe BlockOutput) BarIO Bool
+            sendQueuedSignals = do
               maybeSignal <- liftIO . atomically $ tryReadTChan signalChan
               case maybeSignal of
-                Just signal -> do
-                  case signal of
-                    EventSignal _ -> do
-                      (state, _) <- get
-                      lift $ yield (invalidateBlockState state, EventUpdate)
-                    _ -> return ()
-                  outputAndStore signal
-                  void sendQueuedEvents
-                  return True
+                Just signal -> sendSignal signal >> sendQueuedSignals >> return True
                 Nothing -> return False
 
-            outputAndStore :: Signal p -> StateT BlockUpdate (Proxy (Signal p) (Maybe BlockOutput) () BlockUpdate BarIO) ()
-            outputAndStore signal = do
-              maybeOutput <- lift $ request signal
+            sendSignal :: Signal p -> Client (Signal p) (Maybe BlockOutput) BarIO ()
+            sendSignal signal = do
+              maybeOutput <- request signal
 
-              invalidate <- if isEventSignal signal
-                then do
-                  -- Reset invalidate flag
-                  liftIO . atomically $ writeTVar isInvalidatedVar False
-                  return False
-                else
-                  liftIO . atomically $ readTVar isInvalidatedVar
+              let updateInvalidatedState = if isEventSignal signal then (_2 .~ False) else id
 
-              let state = mkBlockStateWithHandler maybeOutput
-              let state' = if invalidate then invalidateBlockState state else state
-
-              let update = (state', signalToReason signal)
-              put update
-              lift $ yield update
+              let blockUpdate = (mkBlockStateWithHandler maybeOutput, signalToReason signal)
+              liftIO . atomically $ modifyTVar renderStateVar ((_1 . _Just .~ blockUpdate) . updateInvalidatedState)
+              liftIO $ Event.set renderEvent
 
             signalToReason :: Signal a -> BlockUpdateReason
             signalToReason (UserSignal _) = DefaultUpdate
@@ -209,14 +206,16 @@ runSignalBlockConfiguration SignalBlockConfiguration{aquire, release, signalThre
 
         signalEventHandler :: BlockEventHandler
         signalEventHandler event = do
-          wasInvalidated' <- liftIO . atomically $ do
-            wasInvalidated <- readTVar isInvalidatedVar
-            unless wasInvalidated $ do
+          wasInvalidatedBefore' <- liftIO . atomically $ do
+            (_, wasInvalidatedBefore) <- readTVar renderStateVar
+            unless wasInvalidatedBefore $ do
               writeTChan signalChan $ EventSignal event
-              writeTVar isInvalidatedVar True
-            return wasInvalidated
+              modifyTVar renderStateVar ((_2 .~ True) . (_1 . _Just . _2 .~ EventUpdate))
+            return wasInvalidatedBefore
 
-          unless wasInvalidated' $ liftIO $ Event.set signalEvent
+          unless wasInvalidatedBefore' $ liftIO $ do
+            Event.set renderEvent
+            Event.set signalEvent
 
 
 -- |Converts a 'PollBlock' to a 'Block' by running it whenever the 'defaultInterval' is triggered.
