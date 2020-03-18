@@ -121,7 +121,7 @@ swayBarOutput options@MainOptions{indicator} = do
 
 runBarServerMirror :: BarIO () -> MainOptions -> IO ()
 runBarServerMirror loadBlocks options = do
-  -- TODO: apply theme from remote
+  -- It would be nice to apply the theme from the remote, but because of the current split between Host and Server some redesign is required first.
   (blockConsumer, eventProducer, _setTheme') <- themingBarServer options
   runBarHost (return (blockConsumer, eventProducer)) $ do
     addServerMirrorStream options
@@ -192,7 +192,7 @@ themingBarServer options = do
           (themedBlocks, isAnimated'') <- liftIO $ modifyMVar themedBlockProducerMVar (\(themedBlockProducer, isAnimated') -> do
             result <- next themedBlockProducer
             case result of
-              -- TODO: fix type safety on this somehow?
+              -- Maybe type safety can be improved so this pattern match is no longer needed?
               Left _ -> throw $ userError "Unexpected behavior: Themes and output cache mailbox should never return"
               Right (themedBlocks, nextThemedBlockProducer) ->
                 return ((nextThemedBlockProducer, isAnimated'), (themedBlocks, isAnimated'))
