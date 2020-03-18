@@ -14,13 +14,12 @@ defaultBarConfig = do
   --addBlock volumeBlock
   addBlock $ cpuUsageBlock 1
   --addBlock ramUsageBlock
+  --addBlock freeDiskSpaceBlock
   --addBlock cpuTemperatureBlock
   addBlock networkManagerBlock
 
 legacyBarConfig :: BarIO ()
 legacyBarConfig = do
-  let todo = pollScriptBlock $ blockLocation "todo"
-  let networkEnvironment = pollScriptBlock $ blockLocation "network-environment"
   let ram = pollScriptBlock (blockLocation "memory") >-> modify (addIcon "🐏\xFE0E") >-> autoPadding
   let temperature = (pollScriptBlock $ blockLocation "temperature") >-> autoPadding
   let volumeBlock = scriptBlock $ blockLocation "volume-pulseaudio -S -F3"
@@ -28,12 +27,10 @@ legacyBarConfig = do
   addBlock dateBlock
   addBlock batteryBlock
   addBlock volumeBlock
-  addBlock temperature
-  addBlock ram
   addBlock $ cpuUsageBlock 1
-  addBlock networkEnvironment
+  addBlock ram
+  addBlock temperature
   addBlock networkManagerBlock
-  addBlock todo
   where
     blockLocation :: String -> FilePath
     blockLocation name = "~/.config/qbar/blocks/" <> name
