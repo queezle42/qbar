@@ -77,8 +77,7 @@ blockParser =
   subparser (
     commandGroup "Available presets:" <>
     metavar "CONFIG..." <>
-    command "default" (info (pure defaultBarConfig) (progDesc "Load default set of blocks.")) <>
-    command "legacy" (info (pure legacyBarConfig) (progDesc "Load the legacy configuration. Requires some custom block scripts."))
+    command "default" (info (pure defaultBarConfig) (progDesc "Load default set of blocks."))
   )
   <|>
   subparser (
