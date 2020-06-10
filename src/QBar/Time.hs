@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedLists #-}
 
-module QBar.Time (SleepScheduler, HasSleepScheduler(..), Interval, createSleepScheduler, sleepUntil, sleepUntil', sleepUntilInterval, sleepUntilInterval', everyMinute, everyNSeconds, nextIntervalTime) where
+module QBar.Time (SleepScheduler, HasSleepScheduler(..), Interval(..), createSleepScheduler, sleepUntil, sleepUntil', sleepUntilInterval, sleepUntilInterval', everyMinute, everyNSeconds, nextIntervalTime, humanReadableInterval) where
 
 import Control.Concurrent.Async
 import Control.Concurrent.MVar
@@ -10,6 +10,7 @@ import Data.SortedList (SortedList, toSortedList, fromSortedList, singleton, par
 import Data.Ord (comparing)
 
 newtype Interval = IntervalSeconds Integer
+  deriving (Read, Show)
 
 -- |Describes an interval that is run every "n" seconds after midnight.
 everyNSeconds :: Integer -> Interval
@@ -29,6 +30,8 @@ nextIntervalTime (IntervalSeconds intervalSeconds) = liftIO $ do
     utctDayTime = fromInteger $ (intervalId + 1) * intervalSeconds
   }
 
+humanReadableInterval :: Interval -> String
+humanReadableInterval (IntervalSeconds i) = show i <> "s"
 
 data SleepScheduler = SleepScheduler (MVar (SortedList ScheduledEvent, [ScheduledEvent])) Event.Event
 data ScheduledEvent = ScheduledEvent {

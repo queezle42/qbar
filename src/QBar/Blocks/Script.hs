@@ -4,6 +4,7 @@ import QBar.BlockHelper
 import QBar.BlockOutput
 import QBar.Core
 import QBar.TagParser
+import QBar.Time
 
 import Control.Exception (IOException)
 import qualified Data.ByteString.Lazy.Char8 as C8
@@ -18,8 +19,8 @@ import System.Process.Typed (Process, shell, setStdin, setStdout,
   getStdout, closed, createPipe, readProcessStdout, startProcess, stopProcess)
 
 
-pollScriptBlock :: FilePath -> Block
-pollScriptBlock path = runPollBlock $ forever $ yieldBlockUpdate =<< (lift blockScriptAction)
+pollScriptBlock :: Interval -> FilePath -> Block
+pollScriptBlock interval path = runPollBlock' interval $ forever $ yieldBlockUpdate =<< (lift blockScriptAction)
   where
     blockScriptAction :: BarIO BlockOutput
     blockScriptAction = do

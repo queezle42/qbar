@@ -9,8 +9,10 @@ import QBar.Core
 import QBar.DefaultConfig
 import QBar.Server
 import QBar.Theme
+import QBar.Time
 
 import Control.Monad (join)
+import Data.Maybe (fromMaybe)
 import qualified Data.Text.Lazy as T
 import Options.Applicative
 
@@ -92,6 +94,15 @@ blockParser =
 
 scriptBlockParser :: Parser (BarIO ())
 scriptBlockParser = helper <*> do
-  poll <- switch $ long "poll" <> short 'p' <> help "Run script in poll mode (every line of output updates the block)."
+  poll <- switch $ long "poll" <> short 'p' <> help "Run script in poll mode (at regular intervals)"
+  -- HACK optparse-applicative does not support options of style --poll[=INTERVAL],
+  -- so we add a second option to specify the interval explicitly instead
+  -- https://github.com/pcapriotti/optparse-applicative/issues/243
+  pollInterval <- fromMaybe defaultInterval <$> (optional $ IntervalSeconds <$> option auto (
+    long "interval" <>
+    short 'i' <>
+    metavar "SECONDS" <>
+    (help $ "Interval to use for --poll mode (default: " <> humanReadableInterval defaultInterval <> ")")
+    ))
   script <- strArgument (metavar "SCRIPT" <> help "The script that will be executed with a shell.")
-  return $ (if poll then addBlock . pollScriptBlock else addBlock . scriptBlock) script
+  return $ (if poll then addBlock . pollScriptBlock pollInterval else addBlock . scriptBlock) script
