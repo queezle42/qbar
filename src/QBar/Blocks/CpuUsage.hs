@@ -3,15 +3,15 @@
 module QBar.Blocks.CpuUsage where
 
 import QBar.BlockHelper
+import QBar.BlockOutput
+import QBar.Blocks.Utils
+import QBar.Core
 
 import Control.Applicative ((<|>))
 import Control.Lens
 import Control.Monad.State (StateT, evalStateT, lift)
 import qualified Data.Attoparsec.Text.Lazy as AT
 import qualified Data.Text.Lazy as T
-import QBar.BlockOutput
-import QBar.Blocks.Utils
-import QBar.Core
 
 {-
   For time accounting the guest fields need to be ignored according to the kernel source code

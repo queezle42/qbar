@@ -76,7 +76,7 @@ data ReconnectMode a = ReconnectNoResend | ReconnectSendLatest a
 reconnectClient :: forall up down. ReconnectMode up -> BarIO (Consumer up IO (), Producer down IO ()) -> BarIO (Consumer up IO (), Producer down IO ())
 reconnectClient reconnectMode connectClient = do
   (upConsumer, upProducer) <- case reconnectMode of
-    ReconnectNoResend  -> liftIO $ mkBroadcastP
+    ReconnectNoResend  -> liftIO mkBroadcastP
     ReconnectSendLatest initial -> liftIO $ mkBroadcastCacheP initial
 
   (downOutput, downInput) <- liftIO $ spawn unbounded
@@ -234,13 +234,6 @@ connectIpcSocket options = do
   connect sock $ SockAddrUnix socketPath
   return sock
 
-$(deriveJSON defaultOptions ''Request)
-$(deriveJSON defaultOptions ''Command)
-$(deriveJSON defaultOptions ''CommandResult)
-$(deriveJSON defaultOptions ''StreamType)
-$(deriveJSON defaultOptions ''BlockStream)
-$(deriveJSON defaultOptions ''MirrorStream)
-
 sendIpc :: Command -> MainOptions -> IO ()
 sendIpc command options@MainOptions{verbose} = do
   result <- sendIpc' command options
@@ -380,3 +373,12 @@ listenUnixSocket options@MainOptions{verbose} bar commandHandler = do
     handleError = encode . Error . pack . show
     errorResponse :: Text -> Producer ByteString IO ()
     errorResponse message = encode $ Error message
+
+
+$(deriveJSON defaultOptions ''Request)
+$(deriveJSON defaultOptions ''Command)
+$(deriveJSON defaultOptions ''CommandResult)
+$(deriveJSON defaultOptions ''StreamType)
+$(deriveJSON defaultOptions ''BlockStream)
+$(deriveJSON defaultOptions ''MirrorStream)
+
