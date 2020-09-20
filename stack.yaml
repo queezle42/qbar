@@ -42,7 +42,7 @@ packages:
 # Disable pure nix-shell environment on NixOS, because access to XDG_RUNTIME_DIR is needed for the control socket
 nix:
   pure: false
-  packages: [ zlib ]
+  packages: [ zlib coreutils ]
 
 # Override default flag values for local packages and extra-deps
 # flags: {}

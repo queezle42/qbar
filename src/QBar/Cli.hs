@@ -88,9 +88,15 @@ blockParser =
     command "date" (info (pure $ addBlock dateBlock) (progDesc "Load the date and time block.")) <>
     command "cpu" (info (pure $ addBlock $ cpuUsageBlock 1) (progDesc "Load the cpu usage block.")) <>
     command "battery" (info (pure $ addBlock $ batteryBlock) (progDesc "Load the battery block.")) <>
+    command "disk" (info diskUsageBlockParser (progDesc "Load the disk usage block.")) <>
     command "networkmanager" (info (pure $ addBlock networkManagerBlock) (progDesc "Load the network-manager block.")) <>
     command "script" (info scriptBlockParser (progDesc "Display the output of an external script as a block."))
   )
+
+diskUsageBlockParser :: Parser (BarIO ())
+diskUsageBlockParser = do
+  file <- strArgument (metavar "FILE" <> help "The FILE by which the file system is selected.")
+  return $ addBlock $ diskUsageBlock file
 
 scriptBlockParser :: Parser (BarIO ())
 scriptBlockParser = helper <*> do
