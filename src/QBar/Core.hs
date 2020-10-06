@@ -6,7 +6,7 @@ module QBar.Core where
 
 import QBar.BlockOutput
 import QBar.Time
-import QBar.Util
+import QBar.Utils
 
 import Control.Concurrent.Async
 import qualified Control.Concurrent.Event as Event

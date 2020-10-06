@@ -6,7 +6,7 @@ module QBar.Host where
 import QBar.BlockOutput
 import QBar.Core
 import QBar.Time
-import QBar.Util
+import QBar.Utils
 
 import Control.Concurrent (forkIO, forkFinally, threadDelay)
 import Control.Concurrent.Async (async, wait, waitBoth)

@@ -1,4 +1,4 @@
-module QBar.Util where
+module QBar.Utils where
 
 import Control.Concurrent.Event as Event
 import Control.Concurrent.STM (atomically)

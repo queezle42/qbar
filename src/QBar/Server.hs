@@ -9,7 +9,7 @@ import QBar.ControlSocket
 import QBar.Host
 import QBar.Pango
 import QBar.Theme
-import QBar.Util
+import QBar.Utils
 
 import Control.Monad (forM_)
 import Control.Concurrent.Async (async, link)

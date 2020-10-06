@@ -14,7 +14,7 @@ import QBar.BlockOutput
 import QBar.Core
 import QBar.Host
 import QBar.Time
-import QBar.Util
+import QBar.Utils
 
 import Control.Concurrent (forkFinally)
 import Control.Concurrent.Async
