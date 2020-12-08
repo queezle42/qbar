@@ -215,19 +215,15 @@ ipcSocketAddress MainOptions{socketLocation} = maybe defaultSocketPath (return .
     defaultSocketPath :: IO FilePath
     defaultSocketPath = do
       waylandSocketPath' <- waylandSocketPath
-      maybe (maybe headlessSocketPath return =<< i3SocketPath) return waylandSocketPath'
+      maybe fallbackSocketPath return waylandSocketPath'
       where
         waylandSocketPath :: IO (Maybe FilePath)
         waylandSocketPath = handleEnvError $ do
           xdgRuntimeDir <- getEnv "XDG_RUNTIME_DIR"
           waylandDisplay <- getEnv "WAYLAND_DISPLAY"
           return $ xdgRuntimeDir </> waylandDisplay <> "-qbar"
-        i3SocketPath :: IO (Maybe FilePath)
-        i3SocketPath = handleEnvError $ do
-          i3SocketPath' <- getEnv "I3_SOCKET_PATH"
-          return $ i3SocketPath' <> "-qbar"
-        headlessSocketPath :: IO FilePath
-        headlessSocketPath = do
+        fallbackSocketPath :: IO FilePath
+        fallbackSocketPath = do
           xdgRuntimeDir <- getEnv "XDG_RUNTIME_DIR"
           return $ xdgRuntimeDir </> "qbar"
     handleEnvError :: IO FilePath -> IO (Maybe FilePath)
