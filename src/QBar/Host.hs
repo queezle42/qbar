@@ -9,11 +9,11 @@ import QBar.Time
 import QBar.Utils
 
 import Control.Concurrent (forkIO, forkFinally, threadDelay)
-import Control.Concurrent.Async (async, wait, waitBoth)
+import Control.Concurrent.Async (async, wait, waitAny)
 import qualified Control.Concurrent.Event as Event
-import Control.Concurrent.MVar (MVar, newMVar, modifyMVar_, swapMVar)
+import Control.Concurrent.MVar
 import Control.Concurrent.STM.TChan
-import Control.Exception (SomeException, catch)
+import Control.Exception (SomeException, catch, fromException)
 import Control.Lens hiding (each, (.=))
 import Control.Monad.STM (atomically)
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
@@ -21,6 +21,7 @@ import Data.Maybe (catMaybes, mapMaybe)
 import qualified Data.Text.Lazy as T
 import Pipes
 import Pipes.Concurrent (spawn, unbounded, toOutput, fromInput)
+import System.Exit (ExitCode, exitWith)
 import System.IO (stderr, hPutStrLn)
 import System.Posix.Signals (Handler(..), sigCONT, installHandler)
 
@@ -164,8 +165,8 @@ requestBarUpdateHandler HostHandle{barUpdateEvent, barUpdatedEvent, followupEven
 
 attachBarOutput :: (Consumer [BlockOutput] IO (), Producer BlockEvent IO ()) -> BarIO ()
 attachBarOutput (blockOutputConsumer, blockEventProducer) = do
-  bar <- askBar
-  liftIO $ attachBarOutputInternal bar (blockOutputConsumer, blockEventProducer)
+  Bar{attachBarOutputInternal} <- askBar
+  liftIO $ attachBarOutputInternal (blockOutputConsumer, blockEventProducer)
 
 
 runBarHost :: BarIO (Consumer [BlockOutput] IO (), Producer BlockEvent IO ()) -> BarIO () -> IO ()
@@ -188,6 +189,8 @@ runBarHost' initializeBarAction = do
   -- Create IORef for event handlers
   eventHandlerListIORef <- newIORef []
 
+  exitCodeMVar <- newEmptyMVar
+
   let hostHandle = HostHandle {
     barUpdateEvent,
     barUpdatedEvent,
@@ -202,7 +205,7 @@ runBarHost' initializeBarAction = do
   (cacheConsumer, cacheProducer) <- mkBroadcastCacheP []
 
   -- Important: both monads (output producer / event consumer) will be forked whenever a new output connects!
-  let attachBarOutputInternal = attachBarOutputImpl cacheProducer (toOutput eventOutput)
+  let attachBarOutputInternal = attachBarOutputImpl exitCodeMVar cacheProducer (toOutput eventOutput)
 
 
   let requestBarUpdate = requestBarUpdateHandler hostHandle
@@ -220,15 +223,28 @@ runBarHost' initializeBarAction = do
   -- Dispatch incoming events to blocks
   eventTask <- async $ runEffect $ fromInput eventInput >-> eventDispatcher bar eventHandlerListIORef
 
+  exitTask <- async $ takeMVar exitCodeMVar >>= exitWith
 
-  void $ waitBoth blockTask eventTask
+
+  void $ waitAny [blockTask, eventTask, exitTask]
 
   where
-    attachBarOutputImpl :: Producer [BlockOutput] IO () -> Consumer BlockEvent IO () -> (Consumer [BlockOutput] IO (), Producer BlockEvent IO ()) -> IO ()
-    attachBarOutputImpl blockOutputProducer eventConsumer (barOutputConsumer, barEventProducer) = do
+    attachBarOutputImpl :: MVar ExitCode -> Producer [BlockOutput] IO () -> Consumer BlockEvent IO () -> (Consumer [BlockOutput] IO (), Producer BlockEvent IO ()) -> IO ()
+    attachBarOutputImpl exitMVar blockOutputProducer eventConsumer (barOutputConsumer, barEventProducer) = do
+
 
       let handleBarEventInput = liftIO $ runEffect $ barEventProducer >-> eventConsumer
-      liftIO $ void $ forkFinally handleBarEventInput (\result -> hPutStrLn stderr $ "An event input handler failed: " <> show result)
+      liftIO $ void $ forkFinally handleBarEventInput $ handleOnExitCodeException (\result -> hPutStrLn stderr $ "An event input handler failed: " <> show result)
 
       let handleBarOutput = liftIO $ runEffect $ blockOutputProducer >-> filterDuplicates >-> barOutputConsumer
-      liftIO $ void $ forkFinally handleBarOutput (\result -> hPutStrLn stderr $ "A bar output handler failed: " <> show result)
+      liftIO $ void $ forkFinally handleBarOutput $ handleOnExitCodeException (\result -> hPutStrLn stderr $ "A bar output handler failed: " <> show result)
+
+      where
+        -- Calls the next handler unless the exception is an ExitCode.
+        handleOnExitCodeException :: (Either SomeException () -> IO ()) -> Either SomeException () -> IO ()
+        handleOnExitCodeException nextHandler x@(Left ex) = case fromException ex of
+          Just exitCode -> do
+            hPutStrLn stderr "Exiting"
+            putMVar exitMVar exitCode
+          Nothing -> nextHandler x
+        handleOnExitCodeException nextHandler x = nextHandler x

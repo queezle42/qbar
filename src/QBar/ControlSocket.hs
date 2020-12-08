@@ -18,9 +18,10 @@ import QBar.Utils
 
 import Control.Concurrent (forkFinally)
 import Control.Concurrent.Async
-import Control.Exception (SomeException, IOException, handle)
+import Control.Exception (SomeException, IOException, handle, onException)
 import Data.Aeson (FromJSON, ToJSON)
 import Data.Aeson.TH
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 import Data.Text.Lazy (pack)
 import Data.Time.Clock (getCurrentTime, addUTCTime)
@@ -37,6 +38,7 @@ import Pipes.Aeson.Unchecked (encode)
 import Pipes.Network.TCP (fromSocket, toSocket)
 import System.Directory (removeFile, doesFileExist)
 import System.Environment (getEnv)
+import System.Exit (exitSuccess)
 import System.FilePath ((</>))
 import System.IO
 
@@ -50,11 +52,15 @@ class (ToJSON (Up s), FromJSON (Up s), ToJSON (Down s), FromJSON (Down s)) => Is
   toStreamType :: s -> StreamType
 
   streamClient :: s -> MainOptions -> BarIO (Consumer (Up s) IO (), Producer (Down s) IO ())
-  streamClient s options@MainOptions{verbose} = liftIO $ do
-    sock <- connectIpcSocket options
-    runEffect (encode (StartStream $ toStreamType s) >-> toSocket sock)
-    let up = forever (await >>= encode) >-> verbosePrintP >-> toSocket sock
-    let down = decodeStreamSafe options (fromSocket sock 4096 >-> verbosePrintP)
+  streamClient s options = do
+    sock <- liftIO $ connectIpcSocket options
+    streamClient' s options (toSocket sock) (fromSocket sock 4096)
+
+  streamClient' :: s -> MainOptions -> Consumer ByteString IO () -> Producer ByteString IO () -> BarIO (Consumer (Up s) IO (), Producer (Down s) IO ())
+  streamClient' s options@MainOptions{verbose} sink source = liftIO $ do
+    runEffect (encode (StartStream $ toStreamType s) >-> sink)
+    let up = forever (await >>= encode) >-> verbosePrintP >-> sink
+    let down = decodeStreamSafe options (source >-> verbosePrintP)
     return (up, down)
     where
       verbosePrintP :: Pipe ByteString ByteString IO ()
@@ -268,6 +274,25 @@ sendBlockStream loadBlocks options = runBarHost blockStreamClient loadBlocks
   where
     blockStreamClient :: BarIO (Consumer [BlockOutput] IO (), Producer BlockEvent IO ())
     blockStreamClient = reconnectClient (ReconnectSendLatest []) $ streamClient BlockStream options
+
+sendBlockStreamStdio :: BarIO () -> MainOptions -> IO ()
+sendBlockStreamStdio loadBlocks options = runBarHost blockStreamClient loadBlocks
+  where
+    blockStreamClient :: BarIO (Consumer [BlockOutput] IO (), Producer BlockEvent IO ())
+    blockStreamClient = streamClient' BlockStream options sink source
+    sink :: Consumer ByteString IO ()
+    sink = forever $ do
+      value <- await
+      -- Close when connection to upstream qbar is lost
+      liftIO $ (BS.hPut stdout value >> hFlush stdout) `onException` (hPutStrLn stderr "Stdout closed" >> exitSuccess)
+    source :: Producer ByteString IO ()
+    source = forever $ do
+      value <- liftIO (BS.hGetSome stdin 4096)
+      -- Close when connection to upstream qbar is lost
+      when (BS.null value) $ liftIO $ do
+        hPutStrLn stderr "Stdin closed"
+        exitSuccess
+      yield value
 
 addServerMirrorStream :: MainOptions -> BarIO ()
 addServerMirrorStream options = do
