@@ -7,6 +7,7 @@ import QBar.TagParser
 import QBar.Time
 
 import Control.Exception (IOException)
+import Data.Aeson (encode)
 import qualified Data.ByteString.Lazy.Char8 as C8
 import qualified Data.Text.Lazy as T
 import qualified Data.Text.Lazy.Encoding as E
@@ -14,9 +15,9 @@ import qualified Data.Text.Lazy.IO as TIO
 import Pipes
 import Pipes.Safe (catchP)
 import System.Exit
-import System.IO
+import System.IO hiding (stdin, stdout)
 import System.Process.Typed (Process, shell, setStdin, setStdout,
-  getStdout, closed, createPipe, readProcessStdout, startProcess, stopProcess)
+  getStdin, getStdout, closed, createPipe, readProcessStdout, startProcess, stopProcess)
 
 
 pollScriptBlock :: Interval -> FilePath -> Block
@@ -36,9 +37,9 @@ pollScriptBlock interval path = runPollBlock' interval $ forever $ yieldBlockUpd
       (text:_) -> parseTags' text
       [] -> emptyBlock
 
-scriptBlock :: FilePath -> Block
+scriptBlock :: Bool -> FilePath -> Block
 -- The outer catchP only catches errors that occur during process creation
-scriptBlock path = catchP startScriptProcess handleError
+scriptBlock clickEvents path = catchP startScriptProcess handleError
   where
     handleError :: IOException -> Block
     handleError e = do
@@ -49,13 +50,32 @@ scriptBlock path = catchP startScriptProcess handleError
       stopProcess process
       handleError e
     startScriptProcess :: Block
-    startScriptProcess = do
+    startScriptProcess = if clickEvents
+      then startScriptProcessWithEvents
+      else startScriptProcessNoEvents
+    startScriptProcessNoEvents :: Block
+    startScriptProcessNoEvents = do
       let processConfig = setStdin closed $ setStdout createPipe $ shell path
       process <- startProcess processConfig
       -- The inner catchP catches errors that happen after the process has been created
       -- This handler will also make sure the process is stopped
-      catchP (blockFromHandle $ getStdout process) (handleErrorWithProcess process)
-    blockFromHandle :: Handle -> Block
-    blockFromHandle handle = forever $ do
-      line <- liftIO $ TIO.hGetLine handle
-      pushBlockUpdate $ parseTags' line
+      catchP (blockFromHandle Nothing $ getStdout process) (handleErrorWithProcess process)
+    startScriptProcessWithEvents :: Block
+    startScriptProcessWithEvents = do
+      let processConfig = setStdin createPipe $ setStdout createPipe $ shell path
+      process <- startProcess processConfig
+      -- The inner catchP catches errors that happen after the process has been created
+      -- This handler will also make sure the process is stopped
+      blockFromHandle (Just $ getStdin process) (getStdout process)
+          `catchP` handleErrorWithProcess process
+    blockFromHandle :: Maybe Handle -> Handle -> Block
+    blockFromHandle stdin stdout = forever $ do
+      line <- liftIO $ TIO.hGetLine stdout
+      let blockOutput = parseTags' line
+      case stdin of
+        Nothing -> pushBlockUpdate blockOutput
+        Just h  -> pushBlockUpdate' (handleClick h) blockOutput
+    handleClick :: Handle -> BlockEventHandler
+    handleClick stdin ev = liftIO $ do
+      C8.hPutStrLn stdin $ encode ev
+      hFlush stdin

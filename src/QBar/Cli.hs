@@ -111,5 +111,6 @@ scriptBlockParser = helper <*> do
     metavar "SECONDS" <>
     (help $ "Interval to use for --poll mode (default: " <> humanReadableInterval defaultInterval <> ")")
     ))
+  clickEvents <- switch $ long "events" <> short 'e' <> help "Send click events to stdin of the script"
   script <- strArgument (metavar "SCRIPT" <> help "The script that will be executed with a shell.")
-  return $ (if poll then addBlock . pollScriptBlock pollInterval else addBlock . scriptBlock) script
+  return $ (if poll then addBlock . pollScriptBlock pollInterval else addBlock . scriptBlock clickEvents) script
