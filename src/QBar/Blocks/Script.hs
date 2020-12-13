@@ -7,6 +7,7 @@ import QBar.TagParser
 import QBar.Time
 
 import Control.Exception (IOException)
+import Control.Concurrent.MVar (newEmptyMVar, putMVar, takeMVar)
 import Data.Aeson (encode)
 import qualified Data.ByteString.Lazy.Char8 as C8
 import qualified Data.Text.Lazy as T
@@ -44,7 +45,12 @@ scriptBlock clickEvents path = catchP startScriptProcess (handleError Nothing)
   where
     handleError :: Maybe ExitCode -> IOException -> Block
     handleError exitCode exc = case result of
-      Left msg -> forever $ pushBlockUpdate $ mkErrorOutput msg
+      Left msg -> do
+        signal <- liftIO newEmptyMVar
+        pushBlockUpdate' (const $ liftIO $ putMVar signal ()) $
+              mkErrorOutput msg
+        liftIO $ takeMVar signal
+        startScriptProcess
       Right x  -> x
       where
         result = case (isEOFError exc, exitCode) of
