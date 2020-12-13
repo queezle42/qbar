@@ -16,8 +16,9 @@ import Pipes
 import Pipes.Safe (catchP)
 import System.Exit
 import System.IO hiding (stdin, stdout)
+import System.IO.Error (isEOFError)
 import System.Process.Typed (Process, shell, setStdin, setStdout,
-  getStdin, getStdout, closed, createPipe, readProcessStdout, startProcess, stopProcess)
+  getStdin, getStdout, closed, createPipe, readProcessStdout, startProcess, stopProcess, getExitCode)
 
 
 pollScriptBlock :: Interval -> FilePath -> Block
@@ -39,16 +40,23 @@ pollScriptBlock interval path = runPollBlock' interval $ forever $ yieldBlockUpd
 
 scriptBlock :: Bool -> FilePath -> Block
 -- The outer catchP only catches errors that occur during process creation
-scriptBlock clickEvents path = catchP startScriptProcess handleError
+scriptBlock clickEvents path = catchP startScriptProcess (handleError Nothing)
   where
-    handleError :: IOException -> Block
-    handleError e = do
-      pushBlockUpdate . mkErrorOutput $ T.pack (show e)
-      exitBlock
+    handleError :: Maybe ExitCode -> IOException -> Block
+    handleError exitCode exc = case result of
+      Left msg -> forever $ pushBlockUpdate $ mkErrorOutput msg
+      Right x  -> x
+      where
+        result = case (isEOFError exc, exitCode) of
+          (True, Just ExitSuccess)      -> Right exitBlock
+          (True, Just (ExitFailure nr)) ->
+            Left $ "exit code " <> T.pack (show nr)
+          _ -> Left $ T.pack (show exc)
     handleErrorWithProcess :: (Process i o e) -> IOException -> Block
-    handleErrorWithProcess process e = do
+    handleErrorWithProcess process exc = do
+      exitCode <- getExitCode process
       stopProcess process
-      handleError e
+      handleError exitCode exc
     startScriptProcess :: Block
     startScriptProcess = if clickEvents
       then startScriptProcessWithEvents
