@@ -6,7 +6,8 @@ import QBar.Core
 import QBar.TagParser
 import QBar.Time
 
-import Control.Exception (IOException)
+import Control.Exception (IOException, handle)
+import Control.Concurrent (threadDelay)
 import Control.Concurrent.MVar (newEmptyMVar, putMVar, takeMVar)
 import Data.Aeson (encode)
 import qualified Data.ByteString.Lazy.Char8 as C8
@@ -41,7 +42,7 @@ pollScriptBlock interval path = runPollBlock' interval $ forever $ yieldBlockUpd
 
 scriptBlock :: Bool -> FilePath -> Block
 -- The outer catchP only catches errors that occur during process creation
-scriptBlock clickEvents path = catchP startScriptProcess (handleError Nothing)
+scriptBlock clickEvents path = startScriptProcess
   where
     handleError :: Maybe ExitCode -> IOException -> Block
     handleError exitCode exc = case result of
@@ -57,16 +58,34 @@ scriptBlock clickEvents path = catchP startScriptProcess (handleError Nothing)
           (True, Just ExitSuccess)      -> Right exitBlock
           (True, Just (ExitFailure nr)) ->
             Left $ "exit code " <> T.pack (show nr)
+          (True, Nothing) ->
+            -- This will happen if we hit the race condition (see below)
+            -- or the process closes its stdout without exiting.
+            Left $ "exit code unavailable"
           _ -> Left $ T.pack (show exc)
+    ignoreIOException :: a -> IO a -> IO a
+    ignoreIOException errValue = handle $ \(_ :: IOException) -> return errValue
     handleErrorWithProcess :: (Process i o e) -> IOException -> Block
     handleErrorWithProcess process exc = do
-      exitCode <- getExitCode process
-      stopProcess process
+      -- We want to know whether the process has already exited or we are
+      -- killing it because of some other error. stopProcess determines
+      -- that but it doesn't tell us. getExitCode is unreliable before
+      -- stopProcess because it will return Nothing while the waiter threat
+      -- hasn't noticed that the process is dead.
+      -- Furthermore, stopProcess may fail in waitForProcess if the process
+      -- has died really quickly.
+      -- I don't think there is anything we can do about this. We do try
+      -- to make the races less likely by waiting a bit.
+      exitCode <- liftIO $ do
+        threadDelay 100000
+        ignoreIOException Nothing (getExitCode process)
+          <* ignoreIOException () (stopProcess process)
       handleError exitCode exc
     startScriptProcess :: Block
-    startScriptProcess = if clickEvents
-      then startScriptProcessWithEvents
-      else startScriptProcessNoEvents
+    startScriptProcess = flip catchP (handleError Nothing) $
+      if clickEvents
+        then startScriptProcessWithEvents
+        else startScriptProcessNoEvents
     startScriptProcessNoEvents :: Block
     startScriptProcessNoEvents = do
       let processConfig = setStdin closed $ setStdout createPipe $ shell path
