@@ -1,6 +1,6 @@
 module QBar.Qubes.AdminAPI where
 
-import Control.Monad (forM)
+import Control.Monad (forM_)
 import Data.Binary
 import Data.Binary.Get
 import Data.Binary.Put
@@ -21,6 +21,7 @@ data QubesAdminReturn
   | Exception { excType :: BL.ByteString, excTraceback :: BL.ByteString, excFormatString :: BL.ByteString, excFields :: [BL.ByteString] }
   deriving (Eq, Ord, Show, Read)
 
+putLazyByteStringNul :: BL.ByteString -> Put
 putLazyByteStringNul x = do
   when (0 `BL.elem` x) $ error "string mustn't contain any \\x00 bytes"
   putLazyByteString x
@@ -34,7 +35,7 @@ instance Binary QubesAdminReturn where
     putWord8 0x31 >> putWord8 0x00
     putLazyByteStringNul evSubject
     putLazyByteStringNul evEvent
-    forM evProperties $ \(k, v) -> do
+    forM_ evProperties $ \(k, v) -> do
       putLazyByteStringNul k
       putLazyByteStringNul v
     putWord8 0x00
@@ -43,7 +44,7 @@ instance Binary QubesAdminReturn where
     putLazyByteStringNul excType
     putLazyByteStringNul excTraceback
     putLazyByteStringNul excFormatString
-    forM excFields putLazyByteStringNul
+    forM_ excFields putLazyByteStringNul
     putWord8 0x00
   get = do
     msgType <- getWord8
