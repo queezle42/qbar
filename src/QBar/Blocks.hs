@@ -4,6 +4,7 @@ module QBar.Blocks
     QBar.Blocks.Date.dateBlock,
     QBar.Blocks.DiskUsage.diskUsageBlock,
     QBar.Blocks.NetworkManager.networkManagerBlock,
+    QBar.Blocks.Qubes.diskUsageQubesBlock,
     QBar.Blocks.Script.scriptBlock,
     QBar.Blocks.Script.pollScriptBlock,
   )
@@ -14,4 +15,5 @@ import qualified QBar.Blocks.CpuUsage
 import qualified QBar.Blocks.Date
 import qualified QBar.Blocks.DiskUsage
 import qualified QBar.Blocks.NetworkManager
+import qualified QBar.Blocks.Qubes
 import qualified QBar.Blocks.Script

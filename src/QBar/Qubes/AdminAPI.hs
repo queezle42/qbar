@@ -7,6 +7,9 @@ import Data.Binary.Put
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Lazy.Char8 as BLC
+import Data.Char (isAlphaNum)
+import Data.Function ((&))
+import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
 import Network.HostName
 import Pipes
@@ -14,6 +17,7 @@ import qualified Pipes.Prelude as P
 import qualified Pipes.Safe as P
 import System.IO (Handle, hSetBinaryMode)
 import System.Process.Typed
+import Text.Read (readMaybe)
 
 data QubesAdminReturn
   = Ok { okContent :: BL.ByteString }
@@ -61,7 +65,7 @@ instance Binary QubesAdminReturn where
         0x00 -> getWord8 >> return []
         _    -> inner >>= \x -> (x:) <$> untilZeroByte inner
 
-qubesAdminConnect :: String -> IO (Process () Handle ())
+qubesAdminConnect :: BL.ByteString -> IO (Process () Handle ())
 qubesAdminConnect serviceName = do
   hostname <- getHostName
   let cmd = if hostname == "dom0"
@@ -71,10 +75,10 @@ qubesAdminConnect serviceName = do
   --     is closed rather than empty.
   --     hangs: qrexec-client-vm dom0 admin.vm.List <&-
   --     works: qrexec-client-vm dom0 admin.vm.List </dev/null
-  let processConfig = setStdin nullStream $ setStdout createPipe $ shell cmd
+  let processConfig = setStdin nullStream $ setStdout createPipe $ shell $ BLC.unpack cmd
   startProcess processConfig
 
-qubesAdminCall :: String -> IO QubesAdminReturn
+qubesAdminCall :: BL.ByteString -> IO QubesAdminReturn
 qubesAdminCall serviceName = do
   process <- qubesAdminConnect serviceName
   let stdout = getStdout process
@@ -85,7 +89,7 @@ qubesAdminCall serviceName = do
     Exception {} -> return reply
     Event {} -> fail "service has returned events instead of a reply"
 
-qubesAdminCallP :: String -> Producer QubesAdminReturn (P.SafeT IO) ()
+qubesAdminCallP :: BL.ByteString -> Producer QubesAdminReturn (P.SafeT IO) ()
 qubesAdminCallP serviceName = do
   process <- liftIO $ qubesAdminConnect serviceName
   let stdout = getStdout process
@@ -107,7 +111,7 @@ qubesAdminCallP serviceName = do
   go (runGetIncremental get)
     `P.finally` stopProcess process
 
-qubesAdminEvents :: String -> Producer QubesAdminReturn (P.SafeT IO) ()
+qubesAdminEvents :: BL.ByteString -> Producer QubesAdminReturn (P.SafeT IO) ()
 qubesAdminEvents serviceName = qubesAdminCallP serviceName >-> onlyEvents
   where
     onlyEvents :: Pipe QubesAdminReturn QubesAdminReturn (P.SafeT IO) ()
@@ -187,3 +191,78 @@ qubesEvents = qubesEventsRaw >-> P.mapFoldable parse where
 
 printEvents  :: Show a => Producer a (P.SafeT IO) () -> IO ()
 printEvents prod = P.runSafeT $ runEffect $ prod >-> (forever $ await >>= liftIO . print)
+
+data QubesVMState = VMRunning | VMHalted | UnknownState
+  deriving (Eq, Ord, Enum)
+data QubesVMClass = AdminVM | AppVM | TemplateVM | DispVM | StandaloneVM | UnknownClass
+  deriving (Eq, Ord, Enum, Show, Read)
+data QubesVMInfo = QubesVMInfo { vmState :: QubesVMState, vmClass :: QubesVMClass }
+  deriving (Eq, Ord, Show, Read)
+
+instance Show QubesVMState where
+  show VMRunning = "Running"
+  show VMHalted = "Halted"
+  show UnknownState = "??"
+
+instance Read QubesVMState where
+  readsPrec _ s = [(value, remainder)]
+    where
+      (word, remainder) = span isAlphaNum s
+      value = case word of
+        "Running" -> VMRunning
+        "Halted" -> VMHalted 
+        _ -> UnknownState
+
+qubesListVMs :: IO (Map.Map BL.ByteString QubesVMInfo)
+qubesListVMs = qubesAdminCall "admin.vm.List" >>= fromOk >>= parse
+  where
+    fromOk (Ok x) = return x
+    fromOk x = fail $ "unexpected reply: " <> show x
+    parse reply = BLC.split '\n' reply
+      & filter (/="")
+      & map parseLine
+      & Map.fromList
+      & return
+    parseLine line =
+      (vmName, QubesVMInfo (readPropEmpty "state") (tryReadProp "class" & fromMaybe UnknownClass))
+      where
+        (vmName : propsRaw) = BLC.split ' ' line
+        props = map (fmap BLC.tail . BLC.break (=='=')) propsRaw
+        getProp :: BL.ByteString -> Maybe BL.ByteString
+        getProp name = lookup name props
+        readPropEmpty :: Read a => BL.ByteString -> a
+        readPropEmpty name = read . BLC.unpack . fromMaybe "" $ getProp name
+        tryReadProp :: Read a => BL.ByteString -> Maybe a
+        tryReadProp name = readMaybe . BLC.unpack =<< getProp name
+
+qubesGetProperty :: BL.ByteString -> IO (Bool, BL.ByteString, BL.ByteString)
+qubesGetProperty name = qubesAdminCall ("admin.property.Get+" <> name) >>= fromOk >>= parse
+  where
+    fromOk (Ok x) = return x
+    fromOk x = fail $ "unexpected reply: " <> show x
+    parse reply = return (isDefault == "default=True", BL.drop 5 typeStr, value)
+      where
+        splitOn ch = fmap BLC.tail . BLC.break (==ch)
+        (isDefault, (typeStr, value)) = splitOn ' ' reply & fmap (splitOn ' ')
+
+qubesGetDefaultPool :: IO BL.ByteString
+qubesGetDefaultPool = third <$> qubesGetProperty "default_pool"
+  where third (_, _, x) = x
+
+qubesGetPoolInfo :: BL.ByteString -> IO [(BL.ByteString, BL.ByteString)]
+qubesGetPoolInfo name = qubesAdminCall ("admin.pool.Info+" <> name) >>= fromOk >>= parse
+  where
+    fromOk (Ok x) = return x
+    fromOk x = fail $ "unexpected reply: " <> show x
+    parse reply = BLC.split '\n' reply
+      & filter (/="")
+      & map parseLine
+      & return
+    parseLine = fmap BLC.tail . BLC.break (=='=')
+
+qubesUsageOfDefaultPool :: IO (Maybe Int, Maybe Int)
+qubesUsageOfDefaultPool = qubesGetDefaultPool >>= qubesGetPoolInfo >>= extract
+  where
+    extract props = return (tryReadProp "usage" props, tryReadProp "size" props)
+    tryReadProp :: Read a => BL.ByteString -> [(BL.ByteString, BL.ByteString)] -> Maybe a
+    tryReadProp name props = readMaybe . BLC.unpack =<< lookup name props

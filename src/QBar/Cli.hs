@@ -93,7 +93,8 @@ blockParser =
     command "battery" (info (pure $ addBlock $ batteryBlock) (progDesc "Load the battery block.")) <>
     command "disk" (info diskUsageBlockParser (progDesc "Load the disk usage block.")) <>
     command "networkmanager" (info (pure $ addBlock networkManagerBlock) (progDesc "Load the network-manager block.")) <>
-    command "script" (info scriptBlockParser (progDesc "Display the output of an external script as a block."))
+    command "script" (info scriptBlockParser (progDesc "Display the output of an external script as a block.")) <>
+    command "diskQubesPool" (info (pure $ addBlock diskUsageQubesBlock) (progDesc "Load a block that shows free space in Qubes' default pool."))
   )
 
 diskUsageBlockParser :: Parser (BarIO ())
