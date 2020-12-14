@@ -4,4 +4,5 @@
 :load src/Prelude.hs
 :set -XImplicitPrelude
 
-:load src/QBar/Cli.hs
+:load src/QBar/Cli.hs src/QBar/Qubes/AdminAPI.hs
+:m QBar.Cli QBar.Qubes.AdminAPI

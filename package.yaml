@@ -24,6 +24,7 @@ dependencies:
 - aeson
 - async
 - attoparsec
+- binary
 - bytestring
 - colour
 - concurrent-extra
@@ -31,6 +32,7 @@ dependencies:
 - dbus
 - directory
 - filepath
+- hostname
 - lens
 - mtl
 - network
