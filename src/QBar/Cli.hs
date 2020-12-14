@@ -8,6 +8,7 @@ import QBar.ControlSocket
 import QBar.Core
 import QBar.DefaultConfig
 import QBar.Server
+import QBar.Qubes.AdminAPI (printEvents, qubesVMStats, qubesEvents)
 import QBar.Theme
 import QBar.Time
 
@@ -43,7 +44,8 @@ barCommandParser = hsubparser (
     command "server" (info serverCommandParser (progDesc "Start a new server.")) <>
     command "mirror" (info mirrorCommandParser (progDesc "Mirror the output of a running server.")) <>
     command "pipe" (info pipeClientParser (progDesc "Redirects the stdin of this process to a running bar.")) <>
-    command "theme" (info themeCommandParser (progDesc "Change the theme of the running qbar server."))
+    command "theme" (info themeCommandParser (progDesc "Change the theme of the running qbar server.")) <>
+    command "qubes" (info qubesCommandParser (progDesc "Display information about Qubes."))
   )
 
 serverCommandParser :: Parser (MainOptions -> IO ())
@@ -114,3 +116,9 @@ scriptBlockParser = helper <*> do
   clickEvents <- switch $ long "events" <> short 'e' <> help "Send click events to stdin of the script"
   script <- strArgument (metavar "SCRIPT" <> help "The script that will be executed with a shell.")
   return $ (if poll then addBlock . pollScriptBlock pollInterval else addBlock . scriptBlock clickEvents) script
+
+qubesCommandParser :: Parser (MainOptions -> IO ())
+qubesCommandParser = hsubparser (
+    command "stats" (info (pure $ const $ printEvents qubesVMStats) (progDesc "Subscribe to VM stats and print them to stdout.")) <>
+    command "events" (info (pure $ const $ printEvents qubesEvents) (progDesc "Subscribe to events and print them to stdout."))
+  )
