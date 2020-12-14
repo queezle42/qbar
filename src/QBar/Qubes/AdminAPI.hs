@@ -7,8 +7,10 @@ import Data.Binary.Put
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Lazy.Char8 as BLC
+import Data.Maybe (fromMaybe)
 import Network.HostName
 import Pipes
+import qualified Pipes.Prelude as P
 import qualified Pipes.Safe as P
 import System.IO (Handle, hSetBinaryMode)
 import System.Process.Typed
@@ -113,8 +115,74 @@ qubesAdminEvents serviceName = qubesAdminCallP serviceName >-> onlyEvents
         Exception {} -> fail $ "service has returned an exception: " ++ show reply
         Event {} -> yield reply
 
-qubesVMStats :: Producer QubesAdminReturn (P.SafeT IO) ()
-qubesVMStats = qubesAdminEvents "admin.vm.Stats"
+qubesVMStatsRaw :: Producer QubesAdminReturn (P.SafeT IO) ()
+qubesVMStatsRaw = qubesAdminEvents "admin.vm.Stats"
+
+data QubesVMStats = QubesVMStats { statsVMName :: BL.ByteString, memoryKB :: Int, cpuTime :: Int, cpuUsageRaw :: Int, cpuUsage :: Int }
+  deriving (Eq, Ord, Show, Read)
+
+qubesVMStats :: Producer QubesVMStats (P.SafeT IO) ()
+qubesVMStats = qubesVMStatsRaw >-> P.mapFoldable parse where
+  parse :: QubesAdminReturn -> Maybe QubesVMStats
+  parse Event {evSubject, evEvent, evProperties}
+    | evEvent == "connection-established" = Nothing
+    | evEvent == "vm-stats" = Just $ addProperties evProperties $ QubesVMStats evSubject absent absent absent absent
+    | otherwise = Nothing  -- shouldn't happen -> report error?
+  parse _ = Nothing  -- shouldn't happen -> report error?
+
+  absent = (-1)
+  readBL = read . BLC.unpack
+
+  addProperties :: [(BL.ByteString, BL.ByteString)] -> QubesVMStats -> QubesVMStats
+  addProperties (("memory_kb",     x) : xs) st = addProperties xs $ st { memoryKB    = readBL x }
+  addProperties (("cpu_time",      x) : xs) st = addProperties xs $ st { cpuTime     = readBL x }
+  addProperties (("cpu_usage_raw", x) : xs) st = addProperties xs $ st { cpuUsageRaw = readBL x }
+  addProperties (("cpu_usage",     x) : xs) st = addProperties xs $ st { cpuUsage    = readBL x }
+  addProperties (_ : xs) st = addProperties xs st
+  addProperties [] st = st
+
+data QubesEvent
+  = OtherEvent QubesAdminReturn
+  | DomainPreStart { domainName :: BL.ByteString, startGuid :: Maybe Bool }
+  | DomainStart { domainName :: BL.ByteString, startGuid :: Maybe Bool }
+  | DomainUnpaused { domainName :: BL.ByteString }
+  | DomainStopped { domainName :: BL.ByteString }
+  | DomainShutdown { domainName :: BL.ByteString }
+  | DomainUpdatesAvailable { domainName :: BL.ByteString, updatesAvailable :: Bool, updatesAvailableOld :: Bool }
+  | DomainStartFailed { domainName :: BL.ByteString, reason :: BL.ByteString }
+  deriving (Eq, Ord, Show, Read)
+
+qubesEventsRaw :: Producer QubesAdminReturn (P.SafeT IO) ()
+qubesEventsRaw = qubesAdminEvents "admin.Events"
+
+qubesEvents :: Producer QubesEvent (P.SafeT IO) ()
+qubesEvents = qubesEventsRaw >-> P.mapFoldable parse where
+  parse :: QubesAdminReturn -> Maybe QubesEvent
+  parse Event {evEvent="connection-established"} = Nothing
+  parse ev@(Event {evSubject, evEvent, evProperties}) =
+    Just $ case evEvent of
+      "domain-pre-start" -> DomainPreStart evSubject (boolProp "start_guid")
+      "domain-start" -> DomainStart evSubject (boolProp "start_guid")
+      "domain-unpaused" -> DomainUnpaused evSubject
+      "domain-stopped" -> DomainStopped evSubject
+      "domain-shutdown" -> DomainShutdown evSubject
+      "domain-feature-set:updates-available" ->
+        DomainUpdatesAvailable evSubject (boolPropViaInt "value") (boolPropViaInt "oldvalue")
+      "domain-start-failed" ->
+        DomainStartFailed evSubject (fromMaybe "" $ getProp "reason")
+      _ -> OtherEvent ev
+    where
+      getProp :: BL.ByteString -> Maybe BL.ByteString
+      getProp name = lookup name evProperties
+      readProp :: Read a => BL.ByteString -> Maybe a
+      readProp name = read . BLC.unpack <$> getProp name
+      intProp :: BL.ByteString -> Maybe Int
+      intProp = readProp
+      boolProp :: BL.ByteString -> Maybe Bool
+      boolProp = readProp
+      boolPropViaInt :: BL.ByteString -> Bool
+      boolPropViaInt = fromMaybe False . fmap (/=0) . intProp
+  parse _ = Nothing  -- shouldn't happen -> report error?
 
 printEvents  :: Show a => Producer a (P.SafeT IO) () -> IO ()
 printEvents prod = P.runSafeT $ runEffect $ prod >-> (forever $ await >>= liftIO . print)
