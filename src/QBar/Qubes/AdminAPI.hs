@@ -79,8 +79,8 @@ qubesAdminConnect serviceName args = do
   let processConfig = setStdin nullStream $ setStdout createPipe $ shell $ BLC.unpack cmd
   startProcess processConfig
 
-qubesAdminCall :: BL.ByteString -> [BL.ByteString] -> IO QubesAdminReturn
-qubesAdminCall serviceName args = do
+qubesTryAdminCall :: BL.ByteString -> [BL.ByteString] -> IO QubesAdminReturn
+qubesTryAdminCall serviceName args = do
   process <- qubesAdminConnect serviceName args
   let stdout = getStdout process
   hSetBinaryMode stdout True
@@ -89,6 +89,12 @@ qubesAdminCall serviceName args = do
     Ok {} -> return reply
     Exception {} -> return reply
     Event {} -> fail "service has returned events instead of a reply"
+
+qubesAdminCall :: BL.ByteString -> [BL.ByteString] -> IO BL.ByteString
+qubesAdminCall serviceName args = qubesTryAdminCall serviceName args >>= get where
+  get Ok {okContent} = return okContent
+  get x@Exception {} = fail $ "service has returned an exception: " <> show x
+  get Event {} = fail "service has returned events instead of a reply"
 
 qubesAdminCallP :: BL.ByteString -> [BL.ByteString] -> Producer QubesAdminReturn (P.SafeT IO) ()
 qubesAdminCallP serviceName args = do
@@ -215,10 +221,8 @@ instance Read QubesVMState where
         _ -> UnknownState
 
 qubesListVMs :: IO (Map.Map BL.ByteString QubesVMInfo)
-qubesListVMs = qubesAdminCall "admin.vm.List" [] >>= fromOk >>= parse
+qubesListVMs = qubesAdminCall "admin.vm.List" [] >>= parse
   where
-    fromOk (Ok x) = return x
-    fromOk x = fail $ "unexpected reply: " <> show x
     parse reply = BLC.split '\n' reply
       & filter (/="")
       & map parseLine
@@ -237,10 +241,8 @@ qubesListVMs = qubesAdminCall "admin.vm.List" [] >>= fromOk >>= parse
         tryReadProp name = readMaybe . BLC.unpack =<< getProp name
 
 qubesGetProperty :: BL.ByteString -> IO (Bool, BL.ByteString, BL.ByteString)
-qubesGetProperty name = qubesAdminCall "admin.property.Get" [name] >>= fromOk >>= parse
+qubesGetProperty name = qubesAdminCall "admin.property.Get" [name] >>= parse
   where
-    fromOk (Ok x) = return x
-    fromOk x = fail $ "unexpected reply: " <> show x
     parse reply = return (isDefault == "default=True", BL.drop 5 typeStr, value)
       where
         splitOn ch = fmap BLC.tail . BLC.break (==ch)
@@ -251,10 +253,8 @@ qubesGetDefaultPool = third <$> qubesGetProperty "default_pool"
   where third (_, _, x) = x
 
 qubesGetPoolInfo :: BL.ByteString -> IO [(BL.ByteString, BL.ByteString)]
-qubesGetPoolInfo name = qubesAdminCall "admin.pool.Info" [name] >>= fromOk >>= parse
+qubesGetPoolInfo name = qubesAdminCall "admin.pool.Info" [name] >>= parse
   where
-    fromOk (Ok x) = return x
-    fromOk x = fail $ "unexpected reply: " <> show x
     parse reply = BLC.split '\n' reply
       & filter (/="")
       & map parseLine
