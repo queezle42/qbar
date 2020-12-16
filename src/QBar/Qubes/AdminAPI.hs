@@ -1,6 +1,6 @@
 module QBar.Qubes.AdminAPI where
 
-import Control.Monad (forM_)
+import Control.Monad (forM_, guard)
 import Data.Binary
 import Data.Binary.Get
 import Data.Binary.Put
@@ -12,6 +12,7 @@ import Data.Function ((&))
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
 import Network.HostName
+import Numeric (showHex, readHex)
 import Pipes
 import qualified Pipes.Prelude as P
 import qualified Pipes.Safe as P
@@ -162,6 +163,8 @@ data QubesEvent
   | DomainShutdown { domainName :: BL.ByteString }
   | DomainUpdatesAvailable { domainName :: BL.ByteString, updatesAvailable :: Bool, updatesAvailableOld :: Bool }
   | DomainStartFailed { domainName :: BL.ByteString, reason :: BL.ByteString }
+  | PropertySet { domainName :: BL.ByteString, changedProperty :: BL.ByteString, newValue :: BL.ByteString, oldValue :: BL.ByteString }
+  | PropertyDel { domainName :: BL.ByteString, changedProperty :: BL.ByteString, oldValue :: BL.ByteString } -- reset to default value
   deriving (Eq, Ord, Show, Read)
 
 qubesEventsRaw :: Producer QubesAdminReturn (P.SafeT IO) ()
@@ -182,7 +185,12 @@ qubesEvents = qubesEventsRaw >-> P.mapFoldable parse where
         DomainUpdatesAvailable evSubject (boolPropViaInt "value") (boolPropViaInt "oldvalue")
       "domain-start-failed" ->
         DomainStartFailed evSubject (fromMaybe "" $ getProp "reason")
-      _ -> OtherEvent ev
+      _ -> case BLC.break (==':') evEvent of
+        ("property-set", _) ->
+          PropertySet evSubject (fromMaybe "" $ getProp "name") (fromMaybe "" $ getProp "newvalue") (fromMaybe "" $ getProp "oldvalue")
+        ("property-del", _) ->
+          PropertyDel evSubject (fromMaybe "" $ getProp "name") (fromMaybe "" $ getProp "oldvalue")
+        _ -> OtherEvent ev
     where
       getProp :: BL.ByteString -> Maybe BL.ByteString
       getProp name = lookup name evProperties
@@ -220,14 +228,17 @@ instance Read QubesVMState where
         "Halted" -> VMHalted 
         _ -> UnknownState
 
-qubesListVMs :: IO (Map.Map BL.ByteString QubesVMInfo)
-qubesListVMs = qubesAdminCall "admin.vm.List" [] >>= parse
+qubesAdminCallLines :: BL.ByteString -> [BL.ByteString] -> IO [BL.ByteString]
+qubesAdminCallLines serviceName args = qubesAdminCall serviceName args >>= parse
   where
     parse reply = BLC.split '\n' reply
       & filter (/="")
-      & map parseLine
-      & Map.fromList
       & return
+
+qubesListVMs :: IO (Map.Map BL.ByteString QubesVMInfo)
+qubesListVMs = parse <$> qubesAdminCallLines "admin.vm.List" []
+  where
+    parse = Map.fromList . map parseLine
     parseLine line =
       (vmName, QubesVMInfo (readPropEmpty "state") (tryReadProp "class" & fromMaybe UnknownClass))
       where
@@ -240,25 +251,33 @@ qubesListVMs = qubesAdminCall "admin.vm.List" [] >>= parse
         tryReadProp :: Read a => BL.ByteString -> Maybe a
         tryReadProp name = readMaybe . BLC.unpack =<< getProp name
 
-qubesGetProperty :: BL.ByteString -> IO (Bool, BL.ByteString, BL.ByteString)
-qubesGetProperty name = qubesAdminCall "admin.property.Get" [name] >>= parse
+data QubesPropertyInfo = QubesPropertyInfo { propIsDefault :: Bool, propType :: BL.ByteString, propValue :: BL.ByteString }
+  deriving (Eq, Ord, Show, Read)
+
+qubesGetProperty :: BL.ByteString -> IO QubesPropertyInfo
+qubesGetProperty name = parse <$> qubesAdminCall "admin.property.Get" [name]
   where
-    parse reply = return (isDefault == "default=True", BL.drop 5 typeStr, value)
+    parse reply = QubesPropertyInfo (isDefault == "default=True") (BL.drop 5 typeStr) value
       where
         splitOn ch = fmap BLC.tail . BLC.break (==ch)
         (isDefault, (typeStr, value)) = splitOn ' ' reply & fmap (splitOn ' ')
 
+qubesListPropertyNames :: IO [BL.ByteString]
+qubesListPropertyNames = qubesAdminCallLines "admin.property.List" []
+
+qubesListProperties :: IO [(BL.ByteString, QubesPropertyInfo)]
+qubesListProperties = qubesListLabelNames >>= mapM (toSndM qubesGetProperty)
+  where
+    toSndM :: Applicative m => (a -> m b) -> a -> m (a, b)
+    toSndM f x = sequenceA (x, f x)
+
 qubesGetDefaultPool :: IO BL.ByteString
-qubesGetDefaultPool = third <$> qubesGetProperty "default_pool"
+qubesGetDefaultPool = propValue <$> qubesGetProperty "default_pool"
   where third (_, _, x) = x
 
 qubesGetPoolInfo :: BL.ByteString -> IO [(BL.ByteString, BL.ByteString)]
-qubesGetPoolInfo name = qubesAdminCall "admin.pool.Info" [name] >>= parse
+qubesGetPoolInfo name = map parseLine <$> qubesAdminCallLines "admin.pool.Info" [name]
   where
-    parse reply = BLC.split '\n' reply
-      & filter (/="")
-      & map parseLine
-      & return
     parseLine = fmap BLC.tail . BLC.break (=='=')
 
 qubesUsageOfDefaultPool :: IO (Maybe Int, Maybe Int)
@@ -267,3 +286,44 @@ qubesUsageOfDefaultPool = qubesGetDefaultPool >>= qubesGetPoolInfo >>= extract
     extract props = return (tryReadProp "usage" props, tryReadProp "size" props)
     tryReadProp :: Read a => BL.ByteString -> [(BL.ByteString, BL.ByteString)] -> Maybe a
     tryReadProp name props = readMaybe . BLC.unpack =<< lookup name props
+
+newtype QubesLabelColor = QubesLabelColor { fromQubesLabelColor :: Int }
+  deriving (Eq, Ord)
+
+instance Show QubesLabelColor where
+  showsPrec _ (QubesLabelColor x) = \s -> "0x" <> pad 6 (showHex x "") <> s
+    where pad l s = replicate (l - length s) '0' <> s
+
+instance Read QubesLabelColor where
+  readsPrec _ ('0' : 'x' : xs) = do
+    let (num, remainder) = splitAt 6 xs
+    guard $ length num == 6
+    (num', []) <- readHex num
+    [(QubesLabelColor num', remainder)]
+
+qubesGetLabelColor :: BL.ByteString -> IO QubesLabelColor
+qubesGetLabelColor name = read . BLC.unpack <$> qubesAdminCall "admin.label.Get" [name]
+
+qubesListLabelNames :: IO [BL.ByteString]
+qubesListLabelNames = qubesAdminCallLines  "admin.label.List" []
+
+qubesListLabels :: IO [(BL.ByteString, QubesLabelColor)]
+qubesListLabels = qubesListLabelNames >>= mapM (toSndM qubesGetLabelColor)
+  where
+    toSndM :: Applicative m => (a -> m b) -> a -> m (a, b)
+    toSndM f x = sequenceA (x, f x)
+
+qubesMonitorProperty :: Producer QubesEvent (P.SafeT IO) () -> BL.ByteString -> Producer QubesPropertyInfo (P.SafeT IO) ()
+qubesMonitorProperty events name = events >-> P.filter isRelevant >-> fetchValue
+  where
+    fetchValue = liftIO (qubesGetProperty name) >>= go
+    go x = do
+      yield x
+      ev <- await
+      case ev of
+        PropertySet {newValue} -> go $ x { propIsDefault = False, propValue = newValue }
+        PropertyDel {} -> fetchValue
+        _ -> go x
+    isRelevant PropertySet {changedProperty} = name == changedProperty
+    isRelevant PropertyDel {changedProperty} = name == changedProperty
+    isRelevant _ = False
