@@ -11,6 +11,7 @@ import Data.Text.Lazy.Encoding (decodeUtf8With)
 import Data.Text.Encoding.Error (lenientDecode)
 import Pipes as P
 import Pipes.Concurrent as P
+import qualified Pipes.Prelude as P
 import qualified Pipes.Safe as P
 
 diskIcon :: T.Text
@@ -45,7 +46,7 @@ diskUsageQubesBlock = runPollBlock $ forever $ do
 qubesMonitorPropertyBlock :: BL.ByteString -> Block
 qubesMonitorPropertyBlock name = do
   (output, input) <- liftIO $ spawn $ newest 1
-  forkSafeEffect $ qubesMonitorProperty qubesEvents name >-> toOutput output
+  forkSafeEffect $ qubesMonitorProperty qubesEvents name >-> P.map Right >-> toOutput output
   toExitBlock $ fromInput input >-> forever (update output)
   where
   forkSafeEffect :: MonadIO m => Effect (P.SafeT IO) () -> m ()
@@ -58,8 +59,18 @@ qubesMonitorPropertyBlock name = do
 
   decode = decodeUtf8With lenientDecode
 
-  update output = do
-    QubesPropertyInfo {propValue, propIsDefault} <- await
-    trace ("update: " <> show propValue) $ pushBlockUpdate' handleClick $ mkBlockOutput $ normalText $ decode propValue <> (if propIsDefault then " (D)" else "")
+  update output = await >>= \case
+    Right prop -> update' prop
+    Left blockOutput -> do
+      let state = Just (blockOutput, Nothing)
+      yield (invalidateBlockState state, EventUpdate)
+      prop <- liftIO (qubesGetProperty name)
+      update' prop
     where
-    handleClick _ = forkEffect $ (liftIO (qubesGetProperty name) >>= yield) >-> toOutput output
+    update' prop = do
+      let QubesPropertyInfo {propValue, propIsDefault} = prop
+      let blockOutput = mkBlockOutput $ normalText $ decode propValue <> (if propIsDefault then " (D)" else "")
+      pushBlockUpdate' (handleClick blockOutput) blockOutput
+
+    handleClick blockOutput _ = do
+      forkEffect $ yield (Left blockOutput) >-> toOutput output
