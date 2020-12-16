@@ -95,7 +95,8 @@ blockParser =
     command "networkmanager" (info (pure $ addBlock networkManagerBlock) (progDesc "Load the network-manager block.")) <>
     command "script" (info scriptBlockParser (progDesc "Display the output of an external script as a block.")) <>
     command "diskQubesPool" (info (pure $ addBlock diskUsageQubesBlock) (progDesc "Load a block that shows free space in Qubes' default pool.")) <>
-    command "qubesProperty" (info qubesPropertyBlockParser (progDesc "Display the current value of a Qubes property."))
+    command "qubesProperty" (info qubesPropertyBlockParser (progDesc "Display the current value of a Qubes property.")) <>
+    command "qubesCount" (info (pure $ addBlock qubesVMCountBlock) (progDesc "Display the number of running Qubes (VMs)."))
   )
 
 diskUsageBlockParser :: Parser (BarIO ())

@@ -257,6 +257,10 @@ qubesListVMs = parse <$> qubesAdminCallLines "admin.vm.List" []
         tryReadProp :: Read a => BL.ByteString -> Maybe a
         tryReadProp name = readMaybe . BLC.unpack =<< getProp name
 
+qubesListVMsP :: forall m. (P.MonadSafe m, MonadIO m, MonadFail m)
+  => Producer (Map.Map BL.ByteString QubesVMInfo) m ()
+qubesListVMsP = liftIO qubesListVMs >>= yield >> qubesEvents >-> P.mapM (const $ liftIO qubesListVMs)
+
 data QubesPropertyInfo = QubesPropertyInfo { propIsDefault :: Bool, propType :: BL.ByteString, propValue :: BL.ByteString }
   deriving (Eq, Ord, Show, Read)
 

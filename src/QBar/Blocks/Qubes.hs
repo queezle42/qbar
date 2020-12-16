@@ -3,11 +3,12 @@ module QBar.Blocks.Qubes where
 import QBar.BlockHelper
 import QBar.BlockOutput
 import QBar.Core
-import QBar.Qubes.AdminAPI (qubesUsageOfDefaultPool, qubesMonitorProperty, qubesGetProperty, qubesEvents, QubesPropertyInfo (..))
+import QBar.Qubes.AdminAPI (qubesUsageOfDefaultPool, qubesMonitorProperty, qubesGetProperty, qubesEvents, QubesPropertyInfo (..), qubesListVMsP, QubesVMState (..), vmState)
 
 import Control.Concurrent.Async
 import Control.Monad.Reader (runReaderT)
 import qualified Data.ByteString.Lazy as BL
+import qualified Data.Map as M
 import qualified Data.Text.Lazy as T
 import Data.Text.Lazy.Encoding (decodeUtf8With)
 import Data.Text.Encoding.Error (lenientDecode)
@@ -81,3 +82,10 @@ qubesMonitorPropertyBlock name = pipeBlockWithEvents (qubesMonitorProperty qubes
     handle = handle' <=< either (const $ liftIO $ qubesGetProperty name) return
     handle' QubesPropertyInfo {propValue, propIsDefault} = return $ Just $ mkBlockOutput $ normalText $ decode propValue <> (if propIsDefault then " (D)" else "")
     decode = decodeUtf8With lenientDecode
+
+qubesVMCountBlock :: Block
+qubesVMCountBlock = qubesListVMsP >-> P.map countVMs >> exitBlock where
+  countVMs = wrap . format . M.size . M.filterWithKey isRunningVM
+  isRunningVM name x = vmState x == VMRunning && name /= "dom0"
+  format n = mkBlockOutput $ normalText $ T.pack (show n) <> " Qube" <> (if n /= 1 then "s" else "")
+  wrap x = (Just (x, Nothing), DefaultUpdate)
