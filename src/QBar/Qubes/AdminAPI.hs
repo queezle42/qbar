@@ -92,10 +92,10 @@ qubesTryAdminCall serviceName args = do
     Event {} -> fail "service has returned events instead of a reply"
 
 qubesAdminCall :: BL.ByteString -> [BL.ByteString] -> IO BL.ByteString
-qubesAdminCall serviceName args = qubesTryAdminCall serviceName args >>= get where
-  get Ok {okContent} = return okContent
-  get x@Exception {} = fail $ "service has returned an exception: " <> show x
-  get Event {} = fail "service has returned events instead of a reply"
+qubesAdminCall serviceName args = qubesTryAdminCall serviceName args >>= extract where
+  extract Ok {okContent} = return okContent
+  extract x@Exception {} = fail $ "service has returned an exception: " <> show x
+  extract Event {} = fail "service has returned events instead of a reply"
 
 qubesAdminCallP :: forall m. (P.MonadSafe m, MonadIO m, MonadFail m)
   => BL.ByteString -> [BL.ByteString] -> Producer QubesAdminReturn m ()
@@ -279,7 +279,6 @@ qubesListProperties = qubesListLabelNames >>= mapM (toSndM qubesGetProperty)
 
 qubesGetDefaultPool :: IO BL.ByteString
 qubesGetDefaultPool = propValue <$> qubesGetProperty "default_pool"
-  where third (_, _, x) = x
 
 qubesGetPoolInfo :: BL.ByteString -> IO [(BL.ByteString, BL.ByteString)]
 qubesGetPoolInfo name = map parseLine <$> qubesAdminCallLines "admin.pool.Info" [name]
@@ -306,6 +305,7 @@ instance Read QubesLabelColor where
     guard $ length num == 6
     (num', []) <- readHex num
     [(QubesLabelColor num', remainder)]
+  readsPrec _ _ = []
 
 qubesGetLabelColor :: BL.ByteString -> IO QubesLabelColor
 qubesGetLabelColor name = read . BLC.unpack <$> qubesAdminCall "admin.label.Get" [name]
