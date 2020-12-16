@@ -3,9 +3,13 @@ module QBar.Blocks.Qubes where
 import QBar.BlockHelper
 import QBar.BlockOutput
 import QBar.Core
-import QBar.Qubes.AdminAPI (qubesUsageOfDefaultPool)
+import QBar.Qubes.AdminAPI (qubesUsageOfDefaultPool, qubesMonitorProperty, qubesEvents, QubesPropertyInfo (..))
 
+import qualified Data.ByteString.Lazy as BL
 import qualified Data.Text.Lazy as T
+import Data.Text.Lazy.Encoding (decodeUtf8With)
+import Data.Text.Encoding.Error (lenientDecode)
+import Pipes
 
 diskIcon :: T.Text
 diskIcon = "💾\xFE0E"
@@ -33,3 +37,12 @@ diskUsageQubesBlock = runPollBlock $ forever $ do
     formatSize size = case filter ((<size) . snd) sizeUnits of
       ((unit, factor) : _) -> T.pack (show $ size `div` factor) <> unit
       _ -> T.pack (show size) <> " bytes"
+
+qubesMonitorPropertyBlock :: BL.ByteString -> Block
+qubesMonitorPropertyBlock name = fmap (const ExitBlock) (qubesMonitorProperty qubesEvents name) >-> forever update
+  where
+  update = do
+    QubesPropertyInfo {propValue, propIsDefault} <- await
+    pushBlockUpdate' handleClick $ mkBlockOutput $ normalText $ decode propValue <> (if propIsDefault then " (D)" else "")
+  handleClick _ = return ()  --TODO
+  decode = decodeUtf8With lenientDecode
