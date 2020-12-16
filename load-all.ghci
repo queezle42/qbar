@@ -1,5 +1,6 @@
 :set -isrc -XOverloadedStrings -XNamedFieldPuns -XLambdaCase -XMultiWayIf -XScopedTypeVariables
 
+# see https://gitlab.haskell.org/ghc/ghc/-/issues/10920
 :set -XNoImplicitPrelude
 :load src/Prelude.hs
 :set -XImplicitPrelude
