@@ -97,12 +97,13 @@ qubesAdminCall serviceName args = qubesTryAdminCall serviceName args >>= get whe
   get x@Exception {} = fail $ "service has returned an exception: " <> show x
   get Event {} = fail "service has returned events instead of a reply"
 
-qubesAdminCallP :: BL.ByteString -> [BL.ByteString] -> Producer QubesAdminReturn (P.SafeT IO) ()
+qubesAdminCallP :: forall m. (P.MonadSafe m, MonadIO m, MonadFail m)
+  => BL.ByteString -> [BL.ByteString] -> Producer QubesAdminReturn m ()
 qubesAdminCallP serviceName args = do
   process <- liftIO $ qubesAdminConnect serviceName args
   let stdout = getStdout process
   liftIO $ hSetBinaryMode stdout True
-  let go :: Decoder QubesAdminReturn -> Producer QubesAdminReturn (P.SafeT IO) ()
+  let go :: Decoder QubesAdminReturn -> Producer QubesAdminReturn m ()
       go = \case
         Done remainder _ value -> do
           yield value
@@ -119,22 +120,25 @@ qubesAdminCallP serviceName args = do
   go (runGetIncremental get)
     `P.finally` stopProcess process
 
-qubesAdminEvents :: BL.ByteString -> [BL.ByteString] -> Producer QubesAdminReturn (P.SafeT IO) ()
+qubesAdminEvents :: forall m. (P.MonadSafe m, MonadIO m, MonadFail m)
+  => BL.ByteString -> [BL.ByteString] -> Producer QubesAdminReturn m ()
 qubesAdminEvents serviceName args = qubesAdminCallP serviceName args >-> onlyEvents
   where
-    onlyEvents :: Pipe QubesAdminReturn QubesAdminReturn (P.SafeT IO) ()
+    onlyEvents :: Pipe QubesAdminReturn QubesAdminReturn m ()
     onlyEvents = forever $ await >>= \reply -> case reply of
         Ok {} -> fail "service has returned OK instead of events"
         Exception {} -> fail $ "service has returned an exception: " ++ show reply
         Event {} -> yield reply
 
-qubesVMStatsRaw :: Producer QubesAdminReturn (P.SafeT IO) ()
+qubesVMStatsRaw :: forall m. (P.MonadSafe m, MonadIO m, MonadFail m)
+  => Producer QubesAdminReturn m ()
 qubesVMStatsRaw = qubesAdminEvents "admin.vm.Stats" []
 
 data QubesVMStats = QubesVMStats { statsVMName :: BL.ByteString, memoryKB :: Int, cpuTime :: Int, cpuUsageRaw :: Int, cpuUsage :: Int }
   deriving (Eq, Ord, Show, Read)
 
-qubesVMStats :: Producer QubesVMStats (P.SafeT IO) ()
+qubesVMStats :: forall m. (P.MonadSafe m, MonadIO m, MonadFail m)
+  => Producer QubesVMStats m ()
 qubesVMStats = qubesVMStatsRaw >-> P.mapFoldable parse where
   parse :: QubesAdminReturn -> Maybe QubesVMStats
   parse Event {evSubject, evEvent, evProperties}
@@ -167,10 +171,12 @@ data QubesEvent
   | PropertyDel { domainName :: BL.ByteString, changedProperty :: BL.ByteString, oldValue :: BL.ByteString } -- reset to default value
   deriving (Eq, Ord, Show, Read)
 
-qubesEventsRaw :: Producer QubesAdminReturn (P.SafeT IO) ()
+qubesEventsRaw :: forall m. (P.MonadSafe m, MonadIO m, MonadFail m)
+  => Producer QubesAdminReturn m ()
 qubesEventsRaw = qubesAdminEvents "admin.Events" []
 
-qubesEvents :: Producer QubesEvent (P.SafeT IO) ()
+qubesEvents :: forall m. (P.MonadSafe m, MonadIO m, MonadFail m)
+  => Producer QubesEvent m ()
 qubesEvents = qubesEventsRaw >-> P.mapFoldable parse where
   parse :: QubesAdminReturn -> Maybe QubesEvent
   parse Event {evEvent="connection-established"} = Nothing
@@ -313,7 +319,8 @@ qubesListLabels = qubesListLabelNames >>= mapM (toSndM qubesGetLabelColor)
     toSndM :: Applicative m => (a -> m b) -> a -> m (a, b)
     toSndM f x = sequenceA (x, f x)
 
-qubesMonitorProperty :: Producer QubesEvent (P.SafeT IO) () -> BL.ByteString -> Producer QubesPropertyInfo (P.SafeT IO) ()
+qubesMonitorProperty :: forall m. (P.MonadSafe m, MonadIO m, MonadFail m)
+  => Producer QubesEvent m () -> BL.ByteString -> Producer QubesPropertyInfo m ()
 qubesMonitorProperty events name = events >-> P.filter isRelevant >-> fetchValue
   where
     fetchValue = liftIO (qubesGetProperty name) >>= go
