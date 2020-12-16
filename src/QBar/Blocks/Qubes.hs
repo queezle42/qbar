@@ -43,10 +43,10 @@ diskUsageQubesBlock = runPollBlock $ forever $ do
       ((unit, factor) : _) -> T.pack (show $ size `div` factor) <> unit
       _ -> T.pack (show size) <> " bytes"
 
-qubesMonitorPropertyBlock :: BL.ByteString -> Block
-qubesMonitorPropertyBlock name = do
+pipeBlockWithEvents :: forall a. Producer a (P.SafeT IO) () -> (Either BlockEvent a -> BarIO (Maybe BlockOutput)) -> Block
+pipeBlockWithEvents prod block = do
   (output, input) <- liftIO $ spawn $ newest 1
-  forkSafeEffect $ qubesMonitorProperty qubesEvents name >-> P.map Right >-> toOutput output
+  forkSafeEffect $ prod >-> P.map Right >-> toOutput output
   toExitBlock $ fromInput input >-> forever (update output)
   where
   forkSafeEffect :: MonadIO m => Effect (P.SafeT IO) () -> m ()
@@ -57,20 +57,25 @@ qubesMonitorPropertyBlock name = do
 
   toExitBlock = fmap (const ExitBlock) 
 
-  decode = decodeUtf8With lenientDecode
-
+  update :: Output (Either (BlockOutput, BlockEvent) a) -> Pipe (Either (BlockOutput, BlockEvent) a) (BlockState, BlockUpdateReason) BarIO ()
   update output = await >>= \case
-    Right prop -> update' prop
-    Left blockOutput -> do
+    Right prop -> update' $ Right prop
+    Left (blockOutput, event) -> do
       let state = Just (blockOutput, Nothing)
       yield (invalidateBlockState state, EventUpdate)
-      prop <- liftIO (qubesGetProperty name)
-      update' prop
+      update' $ Left event
     where
+    update' :: Either BlockEvent a -> P.Pipe b BlockUpdate BarIO ()
     update' prop = do
-      let QubesPropertyInfo {propValue, propIsDefault} = prop
-      let blockOutput = mkBlockOutput $ normalText $ decode propValue <> (if propIsDefault then " (D)" else "")
+      Just blockOutput <- lift $ block prop
       pushBlockUpdate' (handleClick blockOutput) blockOutput
 
-    handleClick blockOutput _ = do
-      forkEffect $ yield (Left blockOutput) >-> toOutput output
+    handleClick blockOutput event = do
+      forkEffect $ yield (Left (blockOutput, event)) >-> toOutput output
+
+qubesMonitorPropertyBlock :: BL.ByteString -> Block
+qubesMonitorPropertyBlock name = pipeBlockWithEvents (qubesMonitorProperty qubesEvents name) handle
+  where
+    handle = handle' <=< either (const $ liftIO $ qubesGetProperty name) return
+    handle' QubesPropertyInfo {propValue, propIsDefault} = return $ Just $ mkBlockOutput $ normalText $ decode propValue <> (if propIsDefault then " (D)" else "")
+    decode = decodeUtf8With lenientDecode
