@@ -5,6 +5,8 @@ import QBar.BlockOutput
 import QBar.Core
 import QBar.Qubes.AdminAPI (qubesUsageOfDefaultPool, qubesMonitorProperty, qubesGetProperty, qubesEvents, QubesPropertyInfo (..))
 
+import Control.Concurrent.Async
+import Control.Monad.Reader (runReaderT)
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Text.Lazy as T
 import Data.Text.Lazy.Encoding (decodeUtf8With)
@@ -43,19 +45,19 @@ diskUsageQubesBlock = runPollBlock $ forever $ do
       ((unit, factor) : _) -> T.pack (show $ size `div` factor) <> unit
       _ -> T.pack (show size) <> " bytes"
 
-pipeBlockWithEvents :: forall a. Producer a (P.SafeT IO) () -> (Either BlockEvent a -> BarIO (Maybe BlockOutput)) -> Block
+pipeBlockWithEvents :: forall a. Producer a BarIO ExitBlock -> (Either BlockEvent a -> BarIO (Maybe BlockOutput)) -> Block
 pipeBlockWithEvents prod block = do
+  bar <- askBar
   (output, input) <- liftIO $ spawn $ newest 1
-  forkSafeEffect $ prod >-> P.map Right >-> toOutput output
-  toExitBlock $ fromInput input >-> forever (update output)
+  exitValue <- forkBarEffect bar $ prod >-> P.map Right >-> forever (toOutput output)
+  fromInput input >-> forever (update output)
+  liftIO $ wait exitValue
   where
-  forkSafeEffect :: MonadIO m => Effect (P.SafeT IO) () -> m ()
-  forkSafeEffect = void . liftIO . forkIO . P.runSafeT . runEffect
+  forkBarEffect :: MonadIO m => Bar -> Effect BarIO b -> m (Async b)
+  forkBarEffect bar = liftIO . async . flip runReaderT bar . P.runSafeT . runEffect
 
   forkEffect :: MonadIO m => Effect IO () -> m ()
   forkEffect = void . liftIO . forkIO . runEffect
-
-  toExitBlock = fmap (const ExitBlock) 
 
   update :: Output (Either (BlockOutput, BlockEvent) a) -> Pipe (Either (BlockOutput, BlockEvent) a) (BlockState, BlockUpdateReason) BarIO ()
   update output = await >>= \case
@@ -74,7 +76,7 @@ pipeBlockWithEvents prod block = do
       forkEffect $ yield (Left (blockOutput, event)) >-> toOutput output
 
 qubesMonitorPropertyBlock :: BL.ByteString -> Block
-qubesMonitorPropertyBlock name = pipeBlockWithEvents (qubesMonitorProperty qubesEvents name) handle
+qubesMonitorPropertyBlock name = pipeBlockWithEvents (qubesMonitorProperty qubesEvents name >> exitBlock) handle
   where
     handle = handle' <=< either (const $ liftIO $ qubesGetProperty name) return
     handle' QubesPropertyInfo {propValue, propIsDefault} = return $ Just $ mkBlockOutput $ normalText $ decode propValue <> (if propIsDefault then " (D)" else "")
