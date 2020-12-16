@@ -3,13 +3,15 @@ module QBar.Blocks.Qubes where
 import QBar.BlockHelper
 import QBar.BlockOutput
 import QBar.Core
-import QBar.Qubes.AdminAPI (qubesUsageOfDefaultPool, qubesMonitorProperty, qubesEvents, QubesPropertyInfo (..))
+import QBar.Qubes.AdminAPI (qubesUsageOfDefaultPool, qubesMonitorProperty, qubesGetProperty, qubesEvents, QubesPropertyInfo (..))
 
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Text.Lazy as T
 import Data.Text.Lazy.Encoding (decodeUtf8With)
 import Data.Text.Encoding.Error (lenientDecode)
-import Pipes
+import Pipes as P
+import Pipes.Concurrent as P
+import qualified Pipes.Safe as P
 
 diskIcon :: T.Text
 diskIcon = "💾\xFE0E"
@@ -26,7 +28,9 @@ diskUsageQubesBlock = runPollBlock $ forever $ do
     createBlockOutput :: Int -> BlockOutput
     createBlockOutput free =
       mkBlockOutput $ chooseColor free $ formatSize free
-    chooseColor _free = normalText  --TODO
+    chooseColor free = if free < 40 * 1024*1024*1024
+      then activeText
+      else normalText
     sizeUnits = [
         ("T", 1024*1024*1024*1024),
         ("G", 1024*1024*1024),
@@ -39,10 +43,23 @@ diskUsageQubesBlock = runPollBlock $ forever $ do
       _ -> T.pack (show size) <> " bytes"
 
 qubesMonitorPropertyBlock :: BL.ByteString -> Block
-qubesMonitorPropertyBlock name = fmap (const ExitBlock) (qubesMonitorProperty qubesEvents name) >-> forever update
+qubesMonitorPropertyBlock name = do
+  (output, input) <- liftIO $ spawn $ newest 1
+  forkSafeEffect $ qubesMonitorProperty qubesEvents name >-> toOutput output
+  toExitBlock $ fromInput input >-> forever (update output)
   where
-  update = do
-    QubesPropertyInfo {propValue, propIsDefault} <- await
-    pushBlockUpdate' handleClick $ mkBlockOutput $ normalText $ decode propValue <> (if propIsDefault then " (D)" else "")
-  handleClick _ = return ()  --TODO
+  forkSafeEffect :: MonadIO m => Effect (P.SafeT IO) () -> m ()
+  forkSafeEffect = void . liftIO . forkIO . P.runSafeT . runEffect
+
+  forkEffect :: MonadIO m => Effect IO () -> m ()
+  forkEffect = void . liftIO . forkIO . runEffect
+
+  toExitBlock = fmap (const ExitBlock) 
+
   decode = decodeUtf8With lenientDecode
+
+  update output = do
+    QubesPropertyInfo {propValue, propIsDefault} <- await
+    trace ("update: " <> show propValue) $ pushBlockUpdate' handleClick $ mkBlockOutput $ normalText $ decode propValue <> (if propIsDefault then " (D)" else "")
+    where
+    handleClick _ = forkEffect $ (liftIO (qubesGetProperty name) >>= yield) >-> toOutput output
