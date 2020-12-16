@@ -94,7 +94,8 @@ blockParser =
     command "disk" (info diskUsageBlockParser (progDesc "Load the disk usage block.")) <>
     command "networkmanager" (info (pure $ addBlock networkManagerBlock) (progDesc "Load the network-manager block.")) <>
     command "script" (info scriptBlockParser (progDesc "Display the output of an external script as a block.")) <>
-    command "diskQubesPool" (info (pure $ addBlock diskUsageQubesBlock) (progDesc "Load a block that shows free space in Qubes' default pool."))
+    command "diskQubesPool" (info (pure $ addBlock diskUsageQubesBlock) (progDesc "Load a block that shows free space in Qubes' default pool.")) <>
+    command "qubesProperty" (info qubesPropertyBlockParser (progDesc "Display the current value of a Qubes property."))
   )
 
 diskUsageBlockParser :: Parser (BarIO ())
@@ -117,6 +118,11 @@ scriptBlockParser = helper <*> do
   clickEvents <- switch $ long "events" <> short 'e' <> help "Send click events to stdin of the script"
   script <- strArgument (metavar "SCRIPT" <> help "The script that will be executed with a shell.")
   return $ (if poll then addBlock . pollScriptBlock pollInterval else addBlock . scriptBlock clickEvents) script
+
+qubesPropertyBlockParser :: Parser (BarIO ())
+qubesPropertyBlockParser  = do
+  name <- strArgument (metavar "NAME" <> help "The NAME of the property.")
+  return $ addBlock $ qubesMonitorPropertyBlock name
 
 qubesCommandParser :: Parser (MainOptions -> IO ())
 qubesCommandParser = hsubparser (

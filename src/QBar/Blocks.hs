@@ -5,6 +5,7 @@ module QBar.Blocks
     QBar.Blocks.DiskUsage.diskUsageBlock,
     QBar.Blocks.NetworkManager.networkManagerBlock,
     QBar.Blocks.Qubes.diskUsageQubesBlock,
+    QBar.Blocks.Qubes.qubesMonitorPropertyBlock,
     QBar.Blocks.Script.scriptBlock,
     QBar.Blocks.Script.pollScriptBlock,
   )
