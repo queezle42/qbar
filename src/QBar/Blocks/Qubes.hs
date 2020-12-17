@@ -5,17 +5,13 @@ import QBar.BlockOutput
 import QBar.Core
 import QBar.Qubes.AdminAPI (qubesUsageOfDefaultPool, qubesMonitorProperty, qubesGetProperty, qubesEvents, QubesPropertyInfo (..), qubesListVMs, qubesListVMsP, QubesVMState (..), vmState)
 
-import Control.Concurrent.Async
-import Control.Monad.Reader (runReaderT)
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Map as M
 import qualified Data.Text.Lazy as T
 import Data.Text.Lazy.Encoding (decodeUtf8With)
 import Data.Text.Encoding.Error (lenientDecode)
 import Pipes as P
-import Pipes.Concurrent as P
-import qualified Pipes.Prelude as P
-import qualified Pipes.Safe as P
+import Pipes.Core as P
 
 diskIcon :: T.Text
 diskIcon = "💾\xFE0E"
@@ -46,45 +42,27 @@ diskUsageQubesBlock = runPollBlock $ forever $ do
       ((unit, factor) : _) -> T.pack (show $ size `div` factor) <> unit
       _ -> T.pack (show size) <> " bytes"
 
-pipeBlockWithEvents :: forall a. Producer a BarIO ExitBlock -> (Either BlockEvent a -> BarIO (Maybe BlockOutput)) -> Block
-pipeBlockWithEvents prod block = do
-  bar <- askBar
-  (output, input) <- liftIO $ spawn $ newest 1
-  exitValue <- forkBarEffect bar $ prod >-> P.map Right >-> forever (toOutput output)
-  fromInput input >-> forever (update output)
-  liftIO $ wait exitValue
+pipeBlockWithEvents :: forall a. Producer a BarIO () -> (Either BlockEvent a -> BarIO (Maybe BlockOutput)) -> Block
+pipeBlockWithEvents prod block = runSignalBlock Nothing (Just produce) sblock
   where
-  forkBarEffect :: MonadIO m => Bar -> Effect BarIO b -> m (Async b)
-  forkBarEffect bar = liftIO . async . flip runReaderT bar . P.runSafeT . runEffect
-
-  forkEffect :: MonadIO m => Effect IO () -> m ()
-  forkEffect = void . liftIO . forkIO . runEffect
-
-  update :: Output (Either (BlockOutput, BlockEvent) a) -> Pipe (Either (BlockOutput, BlockEvent) a) (BlockState, BlockUpdateReason) BarIO ()
-  update output = await >>= \case
-    Right prop -> update' $ Right prop
-    Left (blockOutput, event) -> do
-      let state = Just (blockOutput, Nothing)
-      yield (invalidateBlockState state, EventUpdate)
-      update' $ Left event
-    where
-    update' :: Either BlockEvent a -> P.Pipe b BlockUpdate BarIO ()
-    update' prop = do
-      Just blockOutput <- lift $ block prop
-      pushBlockUpdate' (handleClick blockOutput) blockOutput
-
-    handleClick blockOutput event = do
-      forkEffect $ yield (Left (blockOutput, event)) >-> toOutput output
+    produce :: (a -> IO ()) -> BarIO ()
+    produce yield' = runEffect $ prod >-> forever (await >>= liftIO . yield')
+    sblock :: Signal a -> P.Server (Signal a) (Maybe BlockOutput) BarIO ExitBlock
+    sblock = lift . sblock' >=> respond >=> sblock
+    sblock' :: Signal a -> BarIO (Maybe BlockOutput)
+    sblock' RegularSignal = return Nothing  -- ignore timer
+    sblock' (UserSignal x) = block $ Right x
+    sblock' (EventSignal x) = block $ Left x
 
 qubesMonitorPropertyBlock :: BL.ByteString -> Block
-qubesMonitorPropertyBlock name = pipeBlockWithEvents (qubesMonitorProperty qubesEvents name >> exitBlock) handle
+qubesMonitorPropertyBlock name = pipeBlockWithEvents (qubesMonitorProperty qubesEvents name) handle
   where
     handle = fmap handle' . either (const $ liftIO $ qubesGetProperty name) return
     handle' QubesPropertyInfo {propValue, propIsDefault} = Just $ mkBlockOutput $ normalText $ decode propValue <> (if propIsDefault then " (D)" else "")
     decode = decodeUtf8With lenientDecode
 
 qubesVMCountBlock :: Block
-qubesVMCountBlock = pipeBlockWithEvents (qubesListVMsP >> exitBlock) $ fmap countVMs . either (const $ liftIO $ qubesListVMs) return where
+qubesVMCountBlock = pipeBlockWithEvents qubesListVMsP $ fmap countVMs . either (const $ liftIO $ qubesListVMs) return where
   countVMs = Just . format . M.size . M.filterWithKey isRunningVM
   isRunningVM name x = vmState x == VMRunning && name /= "dom0"
   format n = mkBlockOutput $ normalText $ T.pack (show n) <> " Qube" <> (if n /= 1 then "s" else "")
