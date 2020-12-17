@@ -33,4 +33,4 @@ runPipeClient enableEvents mainOptions = do
             else pushBlockUpdate output
 
         handler :: BlockEventHandler
-        handler event = liftIO $ BSC.hPutStrLn stderr $ encode event
+        handler event = liftIO $ BSC.hPutStrLn stdout $ encode event
