@@ -32,6 +32,7 @@ dependencies:
 - dbus
 - directory
 - filepath
+- gitrev
 - hostname
 - lens
 - mtl

@@ -1,4 +1,5 @@
 {-# LANGUAGE ApplicativeDo #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module QBar.Cli where
 
@@ -15,6 +16,7 @@ import QBar.Time
 import Control.Monad (join)
 import Data.Maybe (fromMaybe)
 import qualified Data.Text.Lazy as T
+import Development.GitRev
 import Options.Applicative
 
 -- |Entry point.
@@ -31,12 +33,18 @@ parseMain = customExecParser parserPrefs parser
     parserPrefs :: ParserPrefs
     parserPrefs = prefs showHelpOnEmpty
 
+versionInformation :: String
+versionInformation = "Branch: " <> $gitBranch <> "\n"
+  <> "Commit: " <> $gitHash <> (if $gitDirty then " (dirty)" else "") <> "\n"
+  <> "Commit date: " <> $gitCommitDate
+
 mainParser :: Parser (IO ())
 mainParser = do
   verbose <- switch $ long "verbose" <> short 'v' <> help "Print more diagnostic output to stderr (including a copy of every bar update)."
   indicator <- switch $ long "indicator" <> short 'i' <> help "Show render indicator."
   socketLocation <- optional $ strOption $ long "socket" <> short 's' <> metavar "SOCKET" <> help "Control socket location. By default determined by WAYLAND_SOCKET location."
   barCommand <- barCommandParser
+  infoOption versionInformation $ long "version" <> help "Shows version information about the executable."
   return (barCommand MainOptions {verbose, indicator, socketLocation})
 
 barCommandParser :: Parser (MainOptions -> IO ())
