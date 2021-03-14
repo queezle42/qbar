@@ -22,7 +22,11 @@ tagParser = parser (False, normalImportant)
         singleElementParser = choice [textParser, activeTagParser, importanceTagParser, spanParser]
 
         textParser :: Parser BlockText
-        textParser = mkText active importance . T.fromStrict <$> A.takeWhile1 (notInClass "<>")
+        textParser = mkText active importance . replaceSymbols . T.fromStrict <$> A.takeWhile1 (notInClass "<>")
+
+        replaceSymbols :: Text -> Text
+        -- replaces &amp; last to prevent the '&' from being interpreted again
+        replaceSymbols = T.replace "&amp;" "&" . T.replace "&lt;" "<" . T.replace "&gt;" ">"
 
         activeTagParser :: Parser BlockText
         activeTagParser = string "<active>" *> parser (True, importance) <* string "</active>"
