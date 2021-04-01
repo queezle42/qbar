@@ -9,6 +9,7 @@ module QBar.Blocks
     QBar.Blocks.Qubes.qubesVMCountBlock,
     QBar.Blocks.Script.scriptBlock,
     QBar.Blocks.Script.pollScriptBlock,
+    QBar.Blocks.Squeekboard.squeekboardBlock,
   )
 where
 
@@ -19,3 +20,4 @@ import qualified QBar.Blocks.DiskUsage
 import qualified QBar.Blocks.NetworkManager
 import qualified QBar.Blocks.Qubes
 import qualified QBar.Blocks.Script
+import qualified QBar.Blocks.Squeekboard

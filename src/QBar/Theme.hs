@@ -138,7 +138,7 @@ rainbowTheme = AnimatedTheme rainbowThemePipe
     rainbowThemePipe :: AnimatedTheme
     rainbowThemePipe = do
       time <- liftIO $ fromRational . toRational <$> getPOSIXTime
-      yield =<< rainbowThemePipe' time <$> await
+      yield . rainbowThemePipe' time =<< await
       rainbowThemePipe
     rainbowThemePipe' :: Double -> StaticTheme
     rainbowThemePipe' time blocks = reverse $ evalState (mapM rainbowBlock $ reverse blocks) 0

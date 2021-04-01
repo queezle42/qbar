@@ -98,10 +98,11 @@ blockParser =
     hidden <>
     command "date" (info (pure $ addBlock dateBlock) (progDesc "Load the date and time block.")) <>
     command "cpu" (info (pure $ addBlock $ cpuUsageBlock 1) (progDesc "Load the cpu usage block.")) <>
-    command "battery" (info (pure $ addBlock $ batteryBlock) (progDesc "Load the battery block.")) <>
+    command "battery" (info (pure $ addBlock batteryBlock) (progDesc "Load the battery block.")) <>
     command "disk" (info diskUsageBlockParser (progDesc "Load the disk usage block.")) <>
     command "networkmanager" (info (pure $ addBlock networkManagerBlock) (progDesc "Load the network-manager block.")) <>
     command "script" (info scriptBlockParser (progDesc "Display the output of an external script as a block.")) <>
+    command "squeekboard" (info squeekboardParser (progDesc "Toggles the visibility of the 'squeekboard' on-screen-keyboard when clicked (squeekboard must be running).")) <>
     command "diskQubesPool" (info (pure $ addBlock diskUsageQubesBlock) (progDesc "Load a block that shows free space in Qubes' default pool.")) <>
     command "qubesProperty" (info qubesPropertyBlockParser (progDesc "Display the current value of a Qubes property.")) <>
     command "qubesCount" (info (pure $ addBlock qubesVMCountBlock) (progDesc "Display the number of running Qubes (VMs)."))
@@ -122,11 +123,16 @@ scriptBlockParser = helper <*> do
     long "interval" <>
     short 'i' <>
     metavar "SECONDS" <>
-    (help $ "Interval to use for --poll mode (default: " <> humanReadableInterval defaultInterval <> ")")
+    help ("Interval to use for --poll mode (default: " <> humanReadableInterval defaultInterval <> ")")
     ))
   clickEvents <- switch $ long "events" <> short 'e' <> help "Send click events to stdin of the script"
   script <- strArgument (metavar "SCRIPT" <> help "The script that will be executed with a shell.")
   return $ (if poll then addBlock . pollScriptBlock pollInterval else addBlock . scriptBlock clickEvents) script
+
+squeekboardParser :: Parser (BarIO ())
+squeekboardParser = do
+  autoHide <- switch $ long "auto-hide" <> short 'q' <> help "Hide the block (instead of showing an error) when squeekboard is not running."
+  return $ addBlock (squeekboardBlock autoHide)
 
 qubesPropertyBlockParser :: Parser (BarIO ())
 qubesPropertyBlockParser  = do
