@@ -2,6 +2,7 @@ module QBar.TagParser where
 
 import QBar.BlockOutput
 import QBar.Color
+import QBar.Prelude
 
 import Control.Applicative ((<|>))
 import Data.Attoparsec.Text.Lazy as A

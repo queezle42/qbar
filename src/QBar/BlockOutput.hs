@@ -1,9 +1,9 @@
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 module QBar.BlockOutput where
 
 import QBar.Color
+import QBar.Prelude
 
 import Control.Lens
 import Data.Aeson

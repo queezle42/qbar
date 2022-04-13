@@ -3,6 +3,7 @@ module QBar.Blocks.DiskUsage where
 import QBar.BlockHelper
 import QBar.BlockOutput
 import QBar.Core
+import QBar.Prelude
 
 import qualified Data.ByteString.Lazy.Char8 as C8
 import qualified Data.Text.Lazy as T
@@ -16,7 +17,7 @@ diskIcon = "💾\xFE0E"
 diskUsageBlock :: Text -> Block
 diskUsageBlock path = runPollBlock $ forever $ do
   output <- liftBarIO action
-  yieldBlockUpdate $ addIcon diskIcon output 
+  yieldBlockUpdate $ addIcon diskIcon output
   where
     action :: BarIO BlockOutput
     action = do

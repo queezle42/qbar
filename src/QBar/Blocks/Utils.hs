@@ -1,6 +1,6 @@
-{-# LANGUAGE ScopedTypeVariables #-}
-
 module QBar.Blocks.Utils where
+
+import QBar.Prelude
 
 import Control.Exception (SomeException, catch)
 import qualified Data.Attoparsec.Text.Lazy as AT

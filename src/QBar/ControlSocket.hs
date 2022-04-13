@@ -1,18 +1,12 @@
 {-# LANGUAGE CPP #-}
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE Rank2Types #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE InstanceSigs #-}
 
 module QBar.ControlSocket where
 
 import QBar.BlockOutput
 import QBar.Core
 import QBar.Host
+import QBar.Prelude
 import QBar.Time
 import QBar.Utils
 
@@ -402,4 +396,3 @@ $(deriveJSON defaultOptions ''CommandResult)
 $(deriveJSON defaultOptions ''StreamType)
 $(deriveJSON defaultOptions ''BlockStream)
 $(deriveJSON defaultOptions ''MirrorStream)
-

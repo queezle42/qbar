@@ -1,5 +1,3 @@
-{-# LANGUAGE FlexibleContexts #-}
-
 module QBar.Blocks.Squeekboard where
 
 import Control.Monad.Except (MonadError)
@@ -12,6 +10,7 @@ import QBar.BlockHelper
 import QBar.BlockOutput
 import QBar.Blocks.NetworkManager (getDBusProperty, runExceptT_)
 import QBar.Core
+import QBar.Prelude
 
 squeekboardBlock :: Bool -> Block
 squeekboardBlock autoHide = runSignalBlockConfiguration $ SignalBlockConfiguration {

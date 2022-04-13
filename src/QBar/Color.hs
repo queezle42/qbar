@@ -1,5 +1,7 @@
 module QBar.Color where
 
+import QBar.Prelude
+
 import Data.Aeson
 import Data.Bits ((.|.), shiftL)
 import Data.Char (ord)
@@ -57,4 +59,3 @@ colorParser = do
                 | w >= 97             = (a `shiftL` 4) .|. fromIntegral (w - 87)
                 | otherwise           = (a `shiftL` 4) .|. fromIntegral (w - 55)
           where w = ord c
-

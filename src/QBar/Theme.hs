@@ -1,10 +1,8 @@
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE Rank2Types #-}
-
 module QBar.Theme where
 
 import QBar.BlockOutput
 import QBar.Color
+import QBar.Prelude
 
 import Control.Applicative ((<|>))
 import Control.Lens ((^.))

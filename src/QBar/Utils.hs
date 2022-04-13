@@ -1,5 +1,7 @@
 module QBar.Utils where
 
+import QBar.Prelude
+
 import Control.Concurrent.Event as Event
 import Control.Concurrent.STM (atomically)
 import Control.Concurrent.STM.TChan

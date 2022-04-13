@@ -1,9 +1,8 @@
-{-# LANGUAGE RankNTypes #-}
-
 module QBar.BlockHelper where
 
 import QBar.BlockOutput
 import QBar.Core
+import QBar.Prelude
 import QBar.Time
 
 import Control.Concurrent.Async

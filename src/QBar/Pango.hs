@@ -1,8 +1,7 @@
-{-# LANGUAGE DuplicateRecordFields #-}
-
 module QBar.Pango (PangoText, renderPango) where
 
 import QBar.Color
+import QBar.Prelude
 import QBar.Theme
 
 type PangoText = Text

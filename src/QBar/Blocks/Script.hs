@@ -3,6 +3,7 @@ module QBar.Blocks.Script where
 import QBar.BlockHelper
 import QBar.BlockOutput
 import QBar.Core
+import QBar.Prelude
 import QBar.TagParser
 import QBar.Time
 

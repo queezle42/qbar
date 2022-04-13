@@ -2,6 +2,7 @@ module QBar.DefaultConfig where
 
 import QBar.Blocks
 import QBar.Core
+import QBar.Prelude
 
 defaultBarConfig :: BarIO ()
 defaultBarConfig = do
@@ -14,4 +15,3 @@ defaultBarConfig = do
   --addBlock freeDiskSpaceBlock
   --addBlock cpuTemperatureBlock
   addBlock networkManagerBlock
-

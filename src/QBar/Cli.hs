@@ -8,10 +8,11 @@ import QBar.Blocks.Pipe
 import QBar.ControlSocket
 import QBar.Core
 import QBar.DefaultConfig
+import QBar.Prelude
 import QBar.Server
-import QBar.Qubes.AdminAPI (printEvents, qubesVMStats, qubesEvents)
 import QBar.Theme
 import QBar.Time
+import QBar.Qubes.AdminAPI (printEvents, qubesVMStats, qubesEvents)
 
 import Control.Monad (join)
 import Data.Maybe (fromMaybe)

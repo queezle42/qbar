@@ -1,10 +1,9 @@
-{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE RankNTypes #-}
 
 module QBar.Core where
 
 import QBar.BlockOutput
+import QBar.Prelude
 import QBar.Time
 import QBar.Utils
 

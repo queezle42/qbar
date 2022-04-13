@@ -2,6 +2,7 @@ module QBar.Blocks.Pipe where
 
 import QBar.ControlSocket
 import QBar.Core
+import QBar.Prelude
 import QBar.TagParser
 
 import Control.Concurrent.Async

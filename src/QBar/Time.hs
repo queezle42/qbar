@@ -2,6 +2,8 @@
 
 module QBar.Time (SleepScheduler, HasSleepScheduler(..), Interval(..), createSleepScheduler, sleepUntil, sleepUntil', sleepUntilInterval, sleepUntilInterval', everyMinute, everyNSeconds, nextIntervalTime, humanReadableInterval) where
 
+import QBar.Prelude
+
 import Control.Concurrent.Async
 import Control.Concurrent.MVar
 import qualified Control.Concurrent.Event as Event

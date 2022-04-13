@@ -6,6 +6,7 @@ import QBar.BlockHelper
 import QBar.BlockOutput
 import QBar.Blocks.Utils
 import QBar.Core
+import QBar.Prelude
 
 import Control.Applicative ((<|>))
 import Control.Lens
@@ -19,18 +20,16 @@ import qualified Data.Text.Lazy as T
   the accounting also counts the guest time to user or nice respectively so applications
   that are not aware of the new fields do not loose time.
 -}
-data CpuStat
-  = CpuStat
-      { userTime :: Int,
-        niceTime :: Int,
-        systemTime :: Int,
-        idleTime :: Int,
-        iowaitTime :: Int,
-        irqTime :: Int,
-        softirqTime :: Int,
-        stealTime :: Int
-      }
-  deriving (Show)
+data CpuStat = CpuStat {
+  userTime :: Int,
+  niceTime :: Int,
+  systemTime :: Int,
+  idleTime :: Int,
+  iowaitTime :: Int,
+  irqTime :: Int,
+  softirqTime :: Int,
+  stealTime :: Int
+} deriving (Show)
 
 getCpuStat :: IO (Maybe CpuStat)
 getCpuStat = parseFile "/proc/stat" cpuStat
@@ -49,53 +48,48 @@ getCpuStat = parseFile "/proc/stat" cpuStat
       irqTime' <- AT.skipSpace *> AT.decimal
       softirqTime' <- AT.skipSpace *> AT.decimal
       stealTime' <- AT.skipSpace *> AT.decimal
-      return $
-        CpuStat
-          { userTime = userTime',
-            niceTime = niceTime',
-            systemTime = systemTime',
-            idleTime = idleTime',
-            iowaitTime = iowaitTime',
-            irqTime = irqTime',
-            softirqTime = softirqTime',
-            stealTime = stealTime'
-          }
+      return $ CpuStat {
+        userTime = userTime',
+        niceTime = niceTime',
+        systemTime = systemTime',
+        idleTime = idleTime',
+        iowaitTime = iowaitTime',
+        irqTime = irqTime',
+        softirqTime = softirqTime',
+        stealTime = stealTime'
+      }
 
 differenceCpuStat :: CpuStat -> CpuStat -> CpuStat
-differenceCpuStat a b =
-  CpuStat
-    { userTime = userTime a - userTime b,
-      niceTime = niceTime a - niceTime b,
-      systemTime = systemTime a - systemTime b,
-      idleTime = idleTime a - idleTime b,
-      iowaitTime = iowaitTime a - iowaitTime b,
-      irqTime = irqTime a - irqTime b,
-      softirqTime = softirqTime a - softirqTime b,
-      stealTime = stealTime a - stealTime b
-    }
+differenceCpuStat a b = CpuStat {
+    userTime = userTime a - userTime b,
+    niceTime = niceTime a - niceTime b,
+    systemTime = systemTime a - systemTime b,
+    idleTime = idleTime a - idleTime b,
+    iowaitTime = iowaitTime a - iowaitTime b,
+    irqTime = irqTime a - irqTime b,
+    softirqTime = softirqTime a - softirqTime b,
+    stealTime = stealTime a - stealTime b
+  }
 
 cpuTotalTime :: Num a => CpuStat -> a
 cpuTotalTime
-  CpuStat
-    { userTime,
-      niceTime,
-      systemTime,
-      idleTime,
-      iowaitTime,
-      irqTime,
-      softirqTime,
-      stealTime
-    } =
-    fromIntegral . sum $
-      [ userTime,
-        niceTime,
-        systemTime,
-        idleTime,
-        iowaitTime,
-        irqTime,
-        softirqTime,
-        stealTime
-      ]
+  CpuStat { userTime,
+    niceTime,
+    systemTime,
+    idleTime,
+    iowaitTime,
+    irqTime,
+    softirqTime,
+    stealTime
+  } = fromIntegral . sum $ [ userTime,
+    niceTime,
+    systemTime,
+    idleTime,
+    iowaitTime,
+    irqTime,
+    softirqTime,
+    stealTime
+  ]
 
 cpuUsage :: CpuStat -> Float
 cpuUsage stat@CpuStat {idleTime, iowaitTime} = 1 - (totalIdleTime / totalTime)
@@ -105,12 +99,10 @@ cpuUsage stat@CpuStat {idleTime, iowaitTime} = 1 - (totalIdleTime / totalTime)
     totalIdleTime :: Num a => a
     totalIdleTime = fromIntegral $ idleTime + iowaitTime
 
-data CpuBlockState
-  = CpuBlockState
-      { _lastCpuStat :: CpuStat,
-        _lastCpuUsage :: Float
-      }
-  deriving (Show)
+data CpuBlockState = CpuBlockState {
+  _lastCpuStat :: CpuStat,
+  _lastCpuUsage :: Float
+} deriving (Show)
 
 makeLenses ''CpuBlockState
 
@@ -124,13 +116,12 @@ cpuUsageBlock decimalPlaces = runPollBlock $ evalStateT cpuUsageBlock' createSta
       text <- ("💻\xFE0E " <>) <$> cpuUsageText
       lift $ yieldBlockUpdate $ mkBlockOutput $ importantText importance text
     createState :: CpuBlockState
-    createState =
-      CpuBlockState
-        { _lastCpuStat = CpuStat 0 0 0 0 0 0 0 0,
-          _lastCpuUsage = 0
-        }
+    createState = CpuBlockState {
+      _lastCpuStat = CpuStat 0 0 0 0 0 0 0 0,
+      _lastCpuUsage = 0
+    }
     cpuUsageImportance :: Monad m => StateT CpuBlockState m Importance
-    cpuUsageImportance = toImportance (0, 60, 80, 90 ,100) <$> use lastCpuUsage
+    cpuUsageImportance = toImportance (0, 60, 80, 90, 100) <$> use lastCpuUsage
     cpuUsageTextWidth :: Num a => a
     cpuUsageTextWidth
       | decimalPlaces == 0 = 3

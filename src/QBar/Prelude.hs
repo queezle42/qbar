@@ -1,7 +1,5 @@
-{-# LANGUAGE NoImplicitPrelude #-}
-
-module Prelude
-  ( module BasePrelude,
+module QBar.Prelude
+  ( module Prelude,
     ByteString.ByteString,
     (>=>),
     (<=<),
@@ -30,13 +28,13 @@ module Prelude
   )
 where
 
-import BasePrelude hiding
+import Prelude hiding
   ( error,
     errorWithoutStackTrace,
     head,
     undefined,
   )
-import qualified BasePrelude as P
+import qualified Prelude as P
 import qualified Control.Monad
 import Control.Monad ((>=>), (<=<))
 import qualified Control.Monad.IO.Class

@@ -1,10 +1,8 @@
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE DuplicateRecordFields #-}
-
 module QBar.Host where
 
 import QBar.BlockOutput
 import QBar.Core
+import QBar.Prelude
 import QBar.Time
 import QBar.Utils
 

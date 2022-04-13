@@ -1,33 +1,26 @@
-{-# LANGUAGE MultiWayIf #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-
 module QBar.Blocks.Battery where
 
 import QBar.BlockHelper
 import QBar.Core
 import QBar.Blocks.Utils
 import QBar.BlockOutput
-
-import qualified Data.Text.Lazy as T
-import qualified Data.Text.Lazy.IO as TIO
-
-import System.Directory
-import Data.Maybe
+import QBar.Prelude
 
 import Control.Lens
-
+import Data.Maybe (catMaybes, mapMaybe)
+import qualified Data.Text.Lazy as T
+import qualified Data.Text.Lazy.IO as TIO
+import System.Directory
 
 data BatteryStatus = BatteryCharging | BatteryDischarging | BatteryOther
-  deriving (Show)
+  deriving (Eq, Show)
 
-
-data BatteryState = BatteryState
-  { _status :: BatteryStatus
-  , _powerNow :: Maybe Int
-  , _energyNow :: Int
-  , _energyFull :: Int
+data BatteryState = BatteryState {
+  _status :: BatteryStatus,
+  _powerNow :: Maybe Int,
+  _energyNow :: Int,
+  _energyFull :: Int
 } deriving (Show)
-
 
 getBatteryState :: FilePath -> IO (Maybe BatteryState)
 getBatteryState path = maybe getBatteryStateCharge (return . Just) =<< getBatteryStateEnergy
@@ -40,12 +33,12 @@ getBatteryState path = maybe getBatteryStateCharge (return . Just) =<< getBatter
       energyNow' <- readIO =<< readFile (path <> "/energy_now")
       energyFull' <- readIO =<< readFile (path <> "/energy_full")
       powerNow' <- batteryPower getVoltage
-      return BatteryState
-        { _status = status'
-        , _powerNow = powerNow'
-        , _energyNow = energyNow'
-        , _energyFull = energyFull'
-        }
+      return BatteryState {
+        _status = status',
+        _powerNow = powerNow',
+        _energyNow = energyNow',
+        _energyFull = energyFull'
+      }
     getBatteryStateCharge :: IO (Maybe BatteryState)
     getBatteryStateCharge = tryMaybe $ do
       status' <- batteryStatus
@@ -53,12 +46,12 @@ getBatteryState path = maybe getBatteryStateCharge (return . Just) =<< getBatter
       powerNow' <- batteryPower (return voltageNow')
       chargeNow' <- readIO =<< readFile (path <> "/charge_now")
       chargeFull' <- readIO =<< readFile (path <> "/charge_full")
-      return BatteryState
-        { _status = status'
-        , _powerNow = powerNow'
-        , _energyNow = round $ voltageNow' * chargeNow' / 1000000
-        , _energyFull = round $ voltageNow' * chargeFull' / 1000000
-        }
+      return BatteryState {
+        _status = status',
+        _powerNow = powerNow',
+        _energyNow = round $ voltageNow' * chargeNow' / 1000000,
+        _energyFull = round $ voltageNow' * chargeFull' / 1000000
+      }
     batteryPower :: IO Double -> IO (Maybe Int)
     batteryPower getVoltage' = do
       power' <- tryMaybe $ readIO =<< readFile (path <> "/power_now")
@@ -71,10 +64,10 @@ getBatteryState path = maybe getBatteryStateCharge (return . Just) =<< getBatter
     batteryStatus :: IO BatteryStatus
     batteryStatus = do
       statusText <- tryMaybe $ T.strip <$> TIO.readFile (path <> "/status")
-      return $ if
-        | statusText == Just "Charging" -> BatteryCharging
-        | statusText == Just "Discharging" -> BatteryDischarging
-        | otherwise -> BatteryOther
+      return $
+        if  | statusText == Just "Charging" -> BatteryCharging
+            | statusText == Just "Discharging" -> BatteryDischarging
+            | otherwise -> BatteryOther
 
 
 batteryBlock :: Block
@@ -118,6 +111,7 @@ updateBatteryBlock isPlugged bs = yieldBlockUpdate $ (shortText.~shortText') $ m
     optionalEachBattery :: BlockText
     optionalEachBattery
       | length bs < 2 = mempty
+      | batteryIsFull bs = mempty
       | otherwise = normalText " " <> eachBattery
 
     eachBattery :: BlockText
@@ -142,7 +136,6 @@ updateBatteryBlock isPlugged bs = yieldBlockUpdate $ (shortText.~shortText') $ m
 batteryImportance :: [BatteryState] -> Importance
 batteryImportance = toImportance (0, 60, 80, 90, 100) . (100 -) . batteryPercentage
 
-
 batteryPercentage :: [BatteryState] -> Float
 batteryPercentage batteryStates
   | batteryEnergyFull == 0 = 0
@@ -164,6 +157,17 @@ batteryEstimateFormated batteryStates = do
   return $ normalText $ (T.pack . show $ allHours) <> ":" <> (T.justifyRight 2 '0' . T.pack . show $ minutes)
 
 
+batteryIsFull :: [BatteryState] -> Bool
+batteryIsFull = all singleBatteryIsFull
+  where
+    singleBatteryIsFull :: BatteryState -> Bool
+    singleBatteryIsFull bs@BatteryState{_status}
+      | _status == BatteryCharging = False
+      | _status == BatteryDischarging = False
+      | 95 >= batteryPercentage [bs] = False
+      | otherwise = True
+
+
 batteryIsCharging :: [BatteryState] -> Bool
 batteryIsCharging = any (singleBatteryIsCharging . _status)
   where
@@ -183,8 +187,8 @@ batteryIsDischarging = any (singleBatteryIsDischarging . _status)
 batteryEstimate :: [BatteryState] -> Maybe Int
 batteryEstimate batteryStates
   | batteryPowerNow == 0 = Nothing
-  | isCharging, not isDischarging = ensure (>0) batteryEstimateCharging
-  | isDischarging, not isCharging = ensure (>0) batteryEstimateDischarging
+  | isCharging, not isDischarging = ensure (> 0) batteryEstimateCharging
+  | isDischarging, not isCharging = ensure (> 0) batteryEstimateDischarging
   | otherwise = Nothing
   where
     isCharging :: Bool

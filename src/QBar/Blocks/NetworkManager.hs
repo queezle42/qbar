@@ -1,5 +1,3 @@
-{-# LANGUAGE FlexibleContexts #-}
-
 module QBar.Blocks.NetworkManager where
 
 import Control.Monad.Except (ExceptT, MonadError, runExceptT, throwError)
@@ -12,6 +10,7 @@ import QBar.BlockHelper
 import QBar.BlockOutput
 import QBar.Blocks.Utils
 import QBar.Core
+import QBar.Prelude
 
 data ConnectionInfo = WifiConnection Text Int | WwanConnection Text Int | EthernetConnection Text
   deriving (Show)

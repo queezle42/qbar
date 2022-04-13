@@ -1,12 +1,10 @@
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-
 module QBar.Server where
 
 import QBar.BlockOutput
 import QBar.Core
 import QBar.ControlSocket
 import QBar.Host
+import QBar.Prelude
 import QBar.Pango
 import QBar.Theme
 import QBar.Utils

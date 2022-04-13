@@ -1,32 +1,46 @@
 {
-  outputs = { self, nixpkgs }: let
+  outputs = { self, nixpkgs }: with nixpkgs.lib; let
 
-    lib = nixpkgs.lib;
-
-    systems = lib.platforms.unix;
-
-    forAllSystems = f: lib.genAttrs systems (system: f system);
+    systems = platforms.unix;
+    forAllSystems = f: genAttrs systems (system: f system);
 
   in {
 
-    packages = forAllSystems (system: {
-      qbar = import ./. {
-        pkgs = nixpkgs.legacyPackages."${system}";
-      };
-    });
+    packages = forAllSystems (system:
+      let pkgs = import nixpkgs { inherit system; overlays = [ self.overlay ]; };
+      in rec {
+        default = qbar;
+        qbar = pkgs.haskellPackages.qbar;
+      }
+    );
 
-    overlay = self: super: {
-      qbar = self.haskellPackages.qd;
-      haskell = super.haskell // {
-        packageOverrides = hself: hsuper: super.haskell.packageOverrides hself hsuper // {
-          qbar = import ./. { pkgs = self; haskellPackages = hself; };
+    defaultPackage = forAllSystems (system: self.packages.${system}.qbar);
+
+    overlay = final: prev: {
+      haskell = prev.haskell // {
+        packageOverrides = hfinal: hprev: prev.haskell.packageOverrides hfinal hprev // {
+          qbar = import ./. {
+            pkgs = final;
+            haskellPackages = hfinal;
+          };
         };
       };
     };
 
-    defaultPackage = forAllSystems (system: self.packages.${system}.qbar);
-
-    devShell = forAllSystems (system: self.packages.${system}.qbar.env);
+    devShell = forAllSystems (system:
+      let
+        pkgs = nixpkgs.legacyPackages.${system};
+      in pkgs.mkShell {
+        inputsFrom = [ self.packages.${system}.default.env ];
+        packages = [
+          pkgs.cabal-install
+          pkgs.zsh
+          pkgs.entr
+          pkgs.ghcid
+          pkgs.haskell-language-server
+        ];
+      }
+    );
 
   };
 }

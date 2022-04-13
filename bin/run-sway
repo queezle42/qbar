@@ -1,13 +1,17 @@
-#!/bin/sh
+#!/usr/bin/env bash
 
 set -e
 set -u
 set -o pipefail
 
-readonly executable_name=qbar
 readonly sway_bar_id=bar-0
 
 readonly default_bar_command="$(swaymsg -t get_bar_config "$sway_bar_id" | jq .status_command)"
+
+if [[ -z "$default_bar_command" ]]; then
+  echo "Cannot get the default bar command" >&2
+  exit 1
+fi
 
 stack build
 
@@ -17,7 +21,7 @@ mkfifo $stderr
 
 trap "swaymsg bar $sway_bar_id status_command '$default_bar_command'; rm -rf $temp_dir" EXIT INT HUP TERM
 
-swaymsg bar $sway_bar_id status_command "exec $(stack path --local-install-root)/bin/$executable_name server swaybar $* 2> $stderr"
+swaymsg bar $sway_bar_id status_command "exec nix run . -- server swaybar default $* 2> $stderr"
 
 # show output and run forever (use Ctrl-C to stop)
 cat $stderr

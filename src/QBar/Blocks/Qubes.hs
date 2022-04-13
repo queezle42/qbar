@@ -3,6 +3,7 @@ module QBar.Blocks.Qubes where
 import QBar.BlockHelper
 import QBar.BlockOutput
 import QBar.Core
+import QBar.Prelude
 import QBar.Qubes.AdminAPI (qubesUsageOfDefaultPool, qubesMonitorProperty, qubesGetProperty, qubesEvents, QubesPropertyInfo (..), qubesListVMs, qubesListVMsP, QubesVMState (..), vmState)
 
 import qualified Data.ByteString.Lazy as BL
@@ -19,7 +20,7 @@ diskIcon = "💾\xFE0E"
 diskUsageQubesBlock :: Block
 diskUsageQubesBlock = runPollBlock $ forever $ do
   output <- liftBarIO action
-  yieldBlockUpdate $ addIcon diskIcon output 
+  yieldBlockUpdate $ addIcon diskIcon output
   where
     action :: BarIO BlockOutput
     action = liftIO qubesUsageOfDefaultPool >>= \case

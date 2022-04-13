@@ -3,6 +3,7 @@ module QBar.Blocks.Date where
 import QBar.BlockHelper
 import QBar.BlockOutput
 import QBar.Core
+import QBar.Prelude
 import QBar.Time
 
 import qualified Data.Text.Lazy as T

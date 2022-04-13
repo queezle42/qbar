@@ -1,5 +1,7 @@
 module QBar.Qubes.AdminAPI where
 
+import QBar.Prelude
+
 import Control.Monad (forM_, guard)
 import Data.Binary
 import Data.Binary.Get
@@ -107,7 +109,7 @@ qubesAdminCallP serviceName args = do
       go = \case
         Done remainder _ value -> do
           yield value
-          go $ pushChunk (runGetIncremental get) remainder 
+          go $ pushChunk (runGetIncremental get) remainder
         d@(Partial _) -> do
           chunk <- liftIO $ BS.hGetSome stdout 1024
           if not (BS.null chunk)
@@ -231,7 +233,7 @@ instance Read QubesVMState where
       (word, remainder) = span isAlphaNum s
       value = case word of
         "Running" -> VMRunning
-        "Halted" -> VMHalted 
+        "Halted" -> VMHalted
         _ -> UnknownState
 
 qubesAdminCallLines :: BL.ByteString -> [BL.ByteString] -> IO [BL.ByteString]

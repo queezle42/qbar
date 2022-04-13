@@ -1,6 +1,6 @@
-.stack-work/
-stack.yaml.lock
-qbar.cabal
 *~
 .*.swp
+/result
+/result-*
+/dist-newstyle
 /TODO
