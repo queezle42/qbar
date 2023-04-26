@@ -6,21 +6,15 @@ qbar is a status command for [sway](https://swaywm.org/) and [i3](https://i3wm.o
 
 ### Compiling from Source
 
-Building qbar requires [stack](https://haskellstack.org/). To build it run:
+Building qbar requires nix. To build it run:
 ```
-stack build
+nix build
 ```
 
 You can also use the scripts in the `bin`-directory (all scripts will rebuild the project if required):
 ```
 # Launch as swaybar status command while redirecting stderr to shell
 ./bin/run-sway default
-
-# Run the binary directly (mostly used to control the bar via rpc)
-./bin/run --help
-
-# Install the binary to ~/.local/bin (this can also install tab completions)
-./bin/install
 ```
 
 ## Configuration
