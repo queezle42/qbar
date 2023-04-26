@@ -7,7 +7,7 @@ import Control.Concurrent.STM (atomically)
 import Control.Concurrent.STM.TChan
 import Control.Concurrent.STM.TVar
 import Control.Monad (replicateM)
-import qualified Data.Text.Lazy as T
+import Data.Text.Lazy qualified as T
 import Pipes
 import System.Random
 
