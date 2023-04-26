@@ -30,7 +30,7 @@ data QubesAdminReturn
 
 putLazyByteStringNul :: BL.ByteString -> Put
 putLazyByteStringNul x = do
-  when (0 `BL.elem` x) $ error "string mustn't contain any \\x00 bytes"
+  when (0 `BL.elem` x) $ error "String must not contain any \\x00 bytes"
   putLazyByteString x
   putWord8 0x00
 
