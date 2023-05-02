@@ -6,7 +6,6 @@ module QBar.Qubes.AdminAPI (
   qubesEvents,
   qubesGetProperty,
   qubesListLabelNames,
-  qubesListLabels,
   qubesListProperties,
   qubesListVMs,
   qubesListVMsP,
@@ -17,7 +16,7 @@ module QBar.Qubes.AdminAPI (
 
 import QBar.Prelude
 
-import Control.Monad (forM_, guard)
+import Control.Monad (forM_)
 import Data.Binary
 import Data.Binary.Get
 import Data.Binary.Put
@@ -29,7 +28,6 @@ import Data.Function ((&))
 import Data.Map qualified as Map
 import Data.Maybe (fromMaybe)
 import Network.HostName
-import Numeric (showHex, readHex)
 import Pipes
 import Pipes.Prelude qualified as P
 import Pipes.Safe qualified as P
@@ -298,9 +296,6 @@ qubesGetProperty name = parse <$> qubesAdminCall "admin.property.Get" [name]
         splitOn ch = fmap BLC.tail . BLC.break (== ch)
         (isDefault, (typeStr, value)) = splitOn ' ' reply & fmap (splitOn ' ')
 
-qubesListPropertyNames :: IO [BL.ByteString]
-qubesListPropertyNames = qubesAdminCallLines "admin.property.List" []
-
 qubesListProperties :: IO [(BL.ByteString, QubesPropertyInfo)]
 qubesListProperties = qubesListLabelNames >>= mapM (toSndM qubesGetProperty)
   where
@@ -323,32 +318,9 @@ qubesUsageOfDefaultPool = qubesGetDefaultPool >>= qubesGetPoolInfo >>= extract
     tryReadProp :: Read a => BL.ByteString -> [(BL.ByteString, BL.ByteString)] -> Maybe a
     tryReadProp name props = readMaybe . BLC.unpack =<< lookup name props
 
-newtype QubesLabelColor = QubesLabelColor { fromQubesLabelColor :: Int }
-  deriving (Eq, Ord)
-
-instance Show QubesLabelColor where
-  showsPrec _ (QubesLabelColor x) = \s -> "0x" <> pad 6 (showHex x "") <> s
-    where pad l s = replicate (l - length s) '0' <> s
-
-instance Read QubesLabelColor where
-  readsPrec _ ('0' : 'x' : xs) = do
-    let (num, remainder) = splitAt 6 xs
-    guard $ length num == 6
-    (num', []) <- readHex num
-    [(QubesLabelColor num', remainder)]
-  readsPrec _ _ = []
-
-qubesGetLabelColor :: BL.ByteString -> IO QubesLabelColor
-qubesGetLabelColor name = read . BLC.unpack <$> qubesAdminCall "admin.label.Get" [name]
 
 qubesListLabelNames :: IO [BL.ByteString]
 qubesListLabelNames = qubesAdminCallLines  "admin.label.List" []
-
-qubesListLabels :: IO [(BL.ByteString, QubesLabelColor)]
-qubesListLabels = qubesListLabelNames >>= mapM (toSndM qubesGetLabelColor)
-  where
-    toSndM :: Applicative m => (a -> m b) -> a -> m (a, b)
-    toSndM f x = sequenceA (x, f x)
 
 qubesMonitorProperty :: forall m. MonadIO m
   => Producer QubesEvent m () -> BL.ByteString -> Producer QubesPropertyInfo m ()

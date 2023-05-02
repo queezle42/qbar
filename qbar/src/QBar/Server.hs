@@ -30,9 +30,6 @@ import Pipes.Concurrent (Input, spawn, latest, toOutput, fromInput)
 import Pipes.Prelude qualified as PP
 import System.IO (stdin, stdout, stderr, hFlush)
 
-data ServerMode = Host | Mirror
-data ServerOutput = Sway | Headless
-
 renderIndicators :: [Text]
 renderIndicators = ["*"] <> cycle ["/", "-", "\\", "|"]
 
