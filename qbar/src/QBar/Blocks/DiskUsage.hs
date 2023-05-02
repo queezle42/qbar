@@ -1,4 +1,6 @@
-module QBar.Blocks.DiskUsage where
+module QBar.Blocks.DiskUsage (
+  diskUsageBlock,
+) where
 
 import QBar.BlockHelper
 import QBar.BlockOutput

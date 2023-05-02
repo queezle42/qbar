@@ -1,4 +1,7 @@
-module QBar.Pango (PangoText, renderPango) where
+module QBar.Pango (
+  PangoText,
+  renderPango,
+) where
 
 import QBar.Color
 import QBar.Prelude

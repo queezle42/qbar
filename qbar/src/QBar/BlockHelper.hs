@@ -1,4 +1,21 @@
-module QBar.BlockHelper where
+module QBar.BlockHelper (
+  PollBlock',
+  PollBlock,
+  PollSignal,
+  Signal(..),
+  SignalBlock,
+  SignalBlockConfiguration(..),
+  respondBlockUpdate,
+  respondEmptyBlockUpdate,
+  runPollBlock',
+  runPollBlock,
+  runSignalBlock,
+  runSignalBlockConfiguration,
+  runSignalBlockFn',
+  runSignalBlockFn,
+  yieldBlockUpdate,
+  yieldEmptyBlockUpdate,
+) where
 
 import QBar.BlockOutput
 import QBar.Core

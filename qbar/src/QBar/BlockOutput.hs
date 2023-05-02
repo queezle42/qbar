@@ -1,6 +1,43 @@
 {-# LANGUAGE TemplateHaskell #-}
 
-module QBar.BlockOutput where
+module QBar.BlockOutput (
+  BlockOutput(..),
+  BlockText(..),
+  BlockTextSegment(..),
+  Importance(..),
+  activeImportantText,
+  activeText,
+  addIcon,
+  blockName,
+  criticalImportant',
+  criticalImportant,
+  emptyBlock,
+  errorImportant',
+  errorImportant,
+  fullText,
+  importantText,
+  invalid,
+  invalidateBlock,
+  isCritical,
+  isError,
+  isNormal,
+  isWarning,
+  mkBlockOutput',
+  mkBlockOutput,
+  mkErrorOutput,
+  mkStyledText,
+  mkText,
+  normalImportant',
+  normalImportant,
+  normalText,
+  printedLength,
+  rawText,
+  shortText,
+  surroundWith,
+  toImportance,
+  warnImportant',
+  warnImportant,
+) where
 
 import QBar.Color
 import QBar.Prelude

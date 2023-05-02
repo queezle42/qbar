@@ -1,7 +1,18 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies #-}
 
-module QBar.ControlSocket where
+module QBar.ControlSocket (
+  Command(..),
+  CommandResult(..),
+  Down,
+  Up,
+  addServerMirrorStream,
+  listenUnixSocketAsync,
+  sendBlockStream,
+  sendBlockStreamStdio,
+  sendIpc,
+) where
 
 import QBar.BlockOutput
 import QBar.Core

@@ -1,4 +1,7 @@
-module QBar.Server where
+module QBar.Server (
+  runBarServer,
+  runBarServerMirror,
+) where
 
 import QBar.BlockOutput
 import QBar.Core

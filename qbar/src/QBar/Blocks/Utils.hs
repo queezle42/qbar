@@ -1,4 +1,10 @@
-module QBar.Blocks.Utils where
+module QBar.Blocks.Utils (
+  ensure,
+  formatFloatN,
+  parseFile,
+  tryMaybe',
+  tryMaybe,
+) where
 
 import QBar.Prelude
 

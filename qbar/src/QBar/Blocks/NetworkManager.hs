@@ -1,4 +1,8 @@
-module QBar.Blocks.NetworkManager where
+module QBar.Blocks.NetworkManager (
+  getDBusProperty,
+  networkManagerBlock,
+  runExceptT_,
+) where
 
 import Control.Monad.Except (ExceptT, MonadError, runExceptT, throwError)
 import qualified DBus

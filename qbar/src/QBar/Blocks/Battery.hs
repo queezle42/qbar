@@ -1,4 +1,6 @@
-module QBar.Blocks.Battery where
+module QBar.Blocks.Battery (
+  batteryBlock,
+) where
 
 import QBar.BlockHelper
 import QBar.Core

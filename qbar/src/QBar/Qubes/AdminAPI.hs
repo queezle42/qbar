@@ -1,4 +1,19 @@
-module QBar.Qubes.AdminAPI where
+module QBar.Qubes.AdminAPI (
+  QubesPropertyInfo(..),
+  QubesVMInfo(..),
+  QubesVMState(..),
+  printEvents,
+  qubesEvents,
+  qubesGetProperty,
+  qubesListLabelNames,
+  qubesListLabels,
+  qubesListProperties,
+  qubesListVMs,
+  qubesListVMsP,
+  qubesMonitorProperty,
+  qubesUsageOfDefaultPool,
+  qubesVMStats,
+) where
 
 import QBar.Prelude
 

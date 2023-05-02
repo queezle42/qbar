@@ -1,6 +1,19 @@
 {-# LANGUAGE OverloadedLists #-}
 
-module QBar.Time (SleepScheduler, HasSleepScheduler(..), Interval(..), createSleepScheduler, sleepUntil, sleepUntil', sleepUntilInterval, sleepUntilInterval', everyMinute, everyNSeconds, nextIntervalTime, humanReadableInterval) where
+module QBar.Time (
+  HasSleepScheduler(..),
+  Interval(..),
+  SleepScheduler,
+  createSleepScheduler,
+  everyMinute,
+  everyNSeconds,
+  humanReadableInterval,
+  nextIntervalTime,
+  sleepUntil',
+  sleepUntil,
+  sleepUntilInterval',
+  sleepUntilInterval,
+) where
 
 import QBar.Prelude
 

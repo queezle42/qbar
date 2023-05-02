@@ -1,4 +1,6 @@
-module QBar.Blocks.Pipe where
+module QBar.Blocks.Pipe (
+  runPipeClient,
+) where
 
 import QBar.ControlSocket
 import QBar.Core

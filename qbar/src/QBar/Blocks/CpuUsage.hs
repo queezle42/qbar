@@ -1,6 +1,8 @@
 {-# LANGUAGE TemplateHaskell #-}
 
-module QBar.Blocks.CpuUsage where
+module QBar.Blocks.CpuUsage (
+  cpuUsageBlock,
+) where
 
 import QBar.BlockHelper
 import QBar.BlockOutput

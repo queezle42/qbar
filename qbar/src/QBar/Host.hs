@@ -1,4 +1,14 @@
-module QBar.Host where
+module QBar.Host (
+  HostHandle(..),
+  attachBarOutput,
+  eventDispatcher,
+  filterDuplicates,
+  installSignalHandlers,
+  requestBarUpdateHandler,
+  runBarHost',
+  runBarHost,
+  runBlocks,
+) where
 
 import QBar.BlockOutput
 import QBar.Core

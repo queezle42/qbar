@@ -1,4 +1,8 @@
-module QBar.Color where
+module QBar.Color (
+  Color(..),
+  colorParser,
+  hexColorText,
+) where
 
 import QBar.Prelude
 

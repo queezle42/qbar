@@ -1,4 +1,7 @@
-module QBar.Blocks.Script where
+module QBar.Blocks.Script (
+  pollScriptBlock,
+  scriptBlock,
+) where
 
 import QBar.BlockHelper
 import QBar.BlockOutput

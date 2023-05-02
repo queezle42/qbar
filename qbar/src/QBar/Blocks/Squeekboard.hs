@@ -1,4 +1,6 @@
-module QBar.Blocks.Squeekboard where
+module QBar.Blocks.Squeekboard (
+  squeekboardBlock,
+) where
 
 import Control.Monad.Except (MonadError)
 import Data.Either (isRight)

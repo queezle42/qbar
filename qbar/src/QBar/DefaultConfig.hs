@@ -1,4 +1,6 @@
-module QBar.DefaultConfig where
+module QBar.DefaultConfig (
+  defaultBarConfig
+) where
 
 import QBar.Blocks
 import QBar.Core

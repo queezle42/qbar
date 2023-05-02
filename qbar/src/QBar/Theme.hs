@@ -1,4 +1,17 @@
-module QBar.Theme where
+module QBar.Theme (
+  Theme(..),
+  ThemedBlockOutput(..),
+  ThemedBlockText(..),
+  ThemedBlockTextSegment(..),
+  defaultTheme,
+  findTheme,
+  isAnimated,
+  mkTheme,
+  mkThemedBlockOutput,
+  themeNames,
+  themes,
+  whiteThemedBlockOutput,
+) where
 
 import QBar.BlockOutput
 import QBar.Color

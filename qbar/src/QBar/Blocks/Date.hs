@@ -1,4 +1,6 @@
-module QBar.Blocks.Date where
+module QBar.Blocks.Date (
+  dateBlock,
+) where
 
 import QBar.BlockHelper
 import QBar.BlockOutput

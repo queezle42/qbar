@@ -1,4 +1,9 @@
-module QBar.TagParser where
+module QBar.TagParser (
+  TagState,
+  parseTags,
+  parseTags',
+  parseTags'',
+) where
 
 import QBar.BlockOutput
 import QBar.Color

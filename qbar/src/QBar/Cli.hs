@@ -1,7 +1,9 @@
 {-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module QBar.Cli where
+module QBar.Cli (
+  runQBar,
+) where
 
 import QBar.Blocks
 import QBar.Blocks.Pipe

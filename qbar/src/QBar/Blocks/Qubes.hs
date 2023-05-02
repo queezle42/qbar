@@ -1,4 +1,8 @@
-module QBar.Blocks.Qubes where
+module QBar.Blocks.Qubes (
+  diskUsageQubesBlock,
+  qubesMonitorPropertyBlock,
+  qubesVMCountBlock,
+) where
 
 import QBar.BlockHelper
 import QBar.BlockOutput

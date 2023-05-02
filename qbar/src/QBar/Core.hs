@@ -1,6 +1,45 @@
-{-# LANGUAGE TemplateHaskell #-}
-
-module QBar.Core where
+module QBar.Core (
+  Bar(..),
+  BarIO,
+  BarUpdateChannel(..),
+  BarUpdateEvent,
+  Block',
+  Block,
+  BlockCache,
+  BlockEvent(..),
+  BlockEventHandler,
+  BlockState,
+  BlockUpdate,
+  BlockUpdateReason(..),
+  ExitBlock(..),
+  IsCachable(..),
+  MainOptions(..),
+  MonadBarIO(..),
+  addBlock,
+  addBlockCache,
+  askBar,
+  autoPadding,
+  barAsync,
+  defaultInterval,
+  exitBlock,
+  hasEventHandler,
+  invalidateBlockState,
+  mkBlockState',
+  mkBlockState,
+  modify,
+  newCache',
+  newCache,
+  newCacheIO,
+  pushBlockUpdate',
+  pushBlockUpdate,
+  pushEmptyBlockUpdate,
+  runBarIO,
+  updateBar',
+  updateBar,
+  updateBarDefault',
+  updateBarDefault,
+  updateEventHandler,
+) where
 
 import QBar.BlockOutput
 import QBar.Prelude
