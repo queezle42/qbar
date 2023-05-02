@@ -1,5 +1,4 @@
 {-# LANGUAGE CPP #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 
 module QBar.ControlSocket (
@@ -25,13 +24,13 @@ import Control.Concurrent (forkFinally)
 import Control.Concurrent.Async
 import Control.Exception (SomeException, IOException, handle, onException)
 import Data.Aeson (FromJSON, ToJSON)
-import Data.Aeson.TH
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 import Data.Text.Lazy (pack)
 import Data.Time.Clock (getCurrentTime, addUTCTime)
 import qualified Data.Text.Lazy as T
 import qualified Data.Text.Lazy.IO as T
+import GHC.Generics
 import Network.Socket
 import Pipes
 import Pipes.Concurrent as PC (Output, spawn, spawn', unbounded, newest, toOutput, fromInput, send, atomically)
@@ -145,13 +144,19 @@ decodeStreamSafe MainOptions{verbose} inputStream = decodeStream inputStream >->
             Right v -> yield v >> failOnDecodingError'
 
 
-data StreamType = BlockStreamType BlockStream | MirrorStreamType MirrorStream
+data StreamType
+  = BlockStreamType BlockStream
+  | MirrorStreamType MirrorStream
+  deriving Generic
+
 mapStreamType :: StreamType -> (forall a. IsStream a => a -> b) -> b
 mapStreamType (BlockStreamType a) f = f a
 mapStreamType (MirrorStreamType a) f = f a
 
 
 data BlockStream = BlockStream
+  deriving Generic
+
 instance IsStream BlockStream where
   type Up BlockStream = [BlockOutput]
   type Down BlockStream = BlockEvent
@@ -191,6 +196,8 @@ instance IsStream BlockStream where
 
 
 data MirrorStream = MirrorStream
+  deriving Generic
+
 instance IsStream MirrorStream where
   type Up MirrorStream = BlockEvent
   type Down MirrorStream = [BlockOutput]
@@ -206,12 +213,13 @@ instance IsStream MirrorStream where
 
 
 data Request = Command Command | StartStream StreamType
+  deriving Generic
 
 data Command = SetTheme T.Text | CheckServer
-  deriving Show
+  deriving (Show, Generic)
 
 data CommandResult = Success | Error Text
-  deriving Show
+  deriving (Show, Generic)
 
 
 ipcSocketAddress :: MainOptions -> IO FilePath
@@ -400,10 +408,20 @@ listenUnixSocket options@MainOptions{verbose} bar commandHandler = do
     errorResponse :: Text -> Producer ByteString IO ()
     errorResponse message = encode $ Error message
 
+instance FromJSON BlockStream
+instance ToJSON BlockStream
 
-$(deriveJSON defaultOptions ''Request)
-$(deriveJSON defaultOptions ''Command)
-$(deriveJSON defaultOptions ''CommandResult)
-$(deriveJSON defaultOptions ''StreamType)
-$(deriveJSON defaultOptions ''BlockStream)
-$(deriveJSON defaultOptions ''MirrorStream)
+instance FromJSON Command
+instance ToJSON Command
+
+instance FromJSON CommandResult
+instance ToJSON CommandResult
+
+instance FromJSON MirrorStream
+instance ToJSON MirrorStream
+
+instance FromJSON Request
+instance ToJSON Request
+
+instance FromJSON StreamType
+instance ToJSON StreamType

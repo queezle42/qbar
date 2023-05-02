@@ -44,9 +44,9 @@ import QBar.Prelude
 
 import Control.Lens
 import Data.Aeson
-import Data.Aeson.TH
 import Data.Int (Int64)
 import qualified Data.Text.Lazy as T
+import GHC.Generics
 
 
 data BlockOutput = BlockOutput {
@@ -55,11 +55,10 @@ data BlockOutput = BlockOutput {
     _blockName :: Maybe T.Text,
     _invalid :: Bool
   }
-  deriving (Eq, Show)
-
+  deriving (Eq, Show, Generic)
 
 newtype BlockText = BlockText [BlockTextSegment]
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
 instance Semigroup BlockText where
   (BlockText a) <> (BlockText b) = BlockText (a <> b)
 instance Monoid BlockText where
@@ -75,18 +74,24 @@ data BlockTextSegment = BlockTextSegment {
     color :: Maybe Color,
     backgroundColor :: Maybe Color
   }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
 
 data Importance = NormalImportant Float | WarnImportant Float | ErrorImportant Float | CriticalImportant Float
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
 
+instance FromJSON BlockOutput
+instance ToJSON BlockOutput
 
-$(deriveJSON defaultOptions ''BlockOutput)
+instance FromJSON BlockText
+instance ToJSON BlockText
+
+instance FromJSON BlockTextSegment
+instance ToJSON BlockTextSegment
+
+instance FromJSON Importance
+instance ToJSON Importance
+
 makeLenses ''BlockOutput
-$(deriveJSON defaultOptions ''Importance)
-$(deriveJSON defaultOptions ''BlockTextSegment)
-$(deriveJSON defaultOptions ''BlockText)
-
 
 mkBlockOutput :: BlockText -> BlockOutput
 mkBlockOutput text = BlockOutput {

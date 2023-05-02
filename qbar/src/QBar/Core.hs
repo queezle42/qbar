@@ -54,10 +54,11 @@ import Control.Lens
 import Control.Monad.Reader (ReaderT, runReaderT, ask)
 import Control.Monad.State (StateT)
 import Control.Monad.Writer (WriterT)
-import Data.Aeson.TH
+import Data.Aeson
 import Data.Int (Int64)
 import Data.Maybe (fromMaybe)
 import qualified Data.Text.Lazy as T
+import GHC.Generics
 import Pipes
 import Pipes.Concurrent
 import Pipes.Safe (SafeT, runSafeT)
@@ -72,9 +73,10 @@ data MainOptions = MainOptions {
 data BlockEvent = Click {
   name :: T.Text,
   button :: Int
-} deriving (Eq, Show)
-$(deriveJSON defaultOptions ''BlockEvent)
+} deriving (Eq, Show, Generic)
 
+instance FromJSON BlockEvent
+instance ToJSON BlockEvent
 
 data ExitBlock = ExitBlock
 
