@@ -23,7 +23,7 @@ runPipeClient enableEvents mainOptions = do
   inputTask <- async $ runEffect $ PP.stdinLn >-> toOutput output
   void $ waitEitherCancel hostTask inputTask
   where
-    -- |Special block that reads the processes stdin line-by-line and shows the latest line in the block. Must never be used in a 'server' process or when stdin/stdout is used in another way.
+    -- Special block that reads the processes stdin line-by-line and shows the latest line in the block. Must never be used in a 'server' process or when stdin/stdout is used in another way.
     pipeBlock :: Producer String BarIO () -> Block
     pipeBlock source = ExitBlock <$ source >-> pack
       where

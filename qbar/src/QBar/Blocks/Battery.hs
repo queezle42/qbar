@@ -97,7 +97,7 @@ batteryBlock = runPollBlock $ forever $ do
 
 updateBatteryBlock :: Bool -> [BatteryState] -> PollBlock' ()
 updateBatteryBlock _ [] = yieldEmptyBlockUpdate
-updateBatteryBlock isPlugged bs = yieldBlockUpdate $ (shortText.~shortText') $ mkBlockOutput fullText'
+updateBatteryBlock isPlugged bs = yieldBlockUpdate $ (shortText .~ shortText') $ mkBlockOutput fullText'
   where
     fullText' :: BlockText
     fullText' = overallPercentage <> optionalEachBattery <> optionalOverallEstimate

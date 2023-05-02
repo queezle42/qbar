@@ -159,7 +159,7 @@ rainbowTheme = AnimatedTheme rainbowThemePipe
           let text = rawText $ block ^. fullText
           let chars = T.unpack . T.reverse $ text
           coloredChars <- mapM rainbowChar chars
-          let rainbowText = reverse $ coloredChars
+          let rainbowText = reverse coloredChars
           return $ ThemedBlockOutput {
             _blockName,
             _fullText = ThemedBlockText rainbowText,

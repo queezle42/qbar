@@ -65,11 +65,11 @@ scriptBlock clickEvents path = startScriptProcess
           (True, Nothing) ->
             -- This will happen if we hit the race condition (see below)
             -- or the process closes its stdout without exiting.
-            Left $ "exit code unavailable"
+            Left "exit code unavailable"
           _ -> Left $ T.pack (show exc)
     ignoreIOException :: a -> IO a -> IO a
     ignoreIOException errValue = handle $ \(_ :: IOException) -> return errValue
-    handleErrorWithProcess :: (Process i o e) -> IOException -> Block
+    handleErrorWithProcess :: Process i o e -> IOException -> Block
     handleErrorWithProcess process exc = do
       -- We want to know whether the process has already exited or we are
       -- killing it because of some other error. stopProcess determines

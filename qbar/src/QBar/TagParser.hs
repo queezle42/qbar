@@ -60,7 +60,7 @@ tagParser = parser (False, normalImportant)
     spanParser :: Parser BlockText
     spanParser = do
       void $ string "<span"
-      (colors, backgrounds) <- unzip <$> (many' $ colorAttribute <|> backgroundAttribute)
+      (colors, backgrounds) <- unzip <$> many' (colorAttribute <|> backgroundAttribute)
       let color = listToMaybe . catMaybes $ colors
       let background = listToMaybe . catMaybes $ backgrounds
       void $ char '>'
@@ -90,7 +90,7 @@ tagParser = parser (False, normalImportant)
 
 
 parseTags :: T.Text -> Either String BlockText
-parseTags text = parseOnly (tagParser <* endOfInput) (T.toStrict text)
+parseTags = parseOnly (tagParser <* endOfInput)
 
 parseTags' :: T.Text -> BlockOutput
 parseTags' = either (mkErrorOutput . T.pack) mkBlockOutput . parseTags

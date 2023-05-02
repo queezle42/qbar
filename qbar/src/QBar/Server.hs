@@ -112,7 +112,7 @@ swayBarOutput options@MainOptions{indicator} = do
           hPut stderr "\n"
           hFlush stderr
     encodeOutput :: [ThemedBlockOutput] -> BS.ByteString
-    encodeOutput blocks = encode $ map renderPangoBlock $ blocks
+    encodeOutput blocks = encode $ map renderPangoBlock blocks
     renderPangoBlock :: ThemedBlockOutput -> PangoBlock
     renderPangoBlock ThemedBlockOutput{_fullText, _shortText, _blockName} = PangoBlock {
       pangoBlockFullText = renderPango _fullText,

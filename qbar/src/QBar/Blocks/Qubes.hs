@@ -43,7 +43,7 @@ diskUsageQubesBlock = runPollBlock $ forever $ do
         ("k", 1024),
         (" bytes", 1)
       ]
-    formatSize size = case filter ((<size) . snd) sizeUnits of
+    formatSize size = case filter ((< size) . snd) sizeUnits of
       ((unit, factor) : _) -> T.pack (show $ size `div` factor) <> unit
       _ -> T.pack (show size) <> " bytes"
 

@@ -52,14 +52,16 @@ colorParser = do
     doubleFromHex2 :: Parser Double
     doubleFromHex2 = (/ 256) . fromIntegral <$> hexadecimal'' 2
 
-    -- |Variant of 'Data.Attoparsec.Text.hexadecimal' that parses a fixed amount of digits.
-    hexadecimal'' :: Int -> Parser Int
+    -- Variant of 'Data.Attoparsec.Text.hexadecimal' that parses a fixed amount of digits.
+    hexadecimal'' :: Int -> A.Parser Int
     hexadecimal'' digits = foldl step 0 <$> count digits (satisfy isHexDigit)
       where
         isHexDigit c = (c >= '0' && c <= '9') ||
                       (c >= 'a' && c <= 'f') ||
                       (c >= 'A' && c <= 'F')
-        step a c | w >= 48 && w <= 57  = (a `shiftL` 4) .|. fromIntegral (w - 48)
-                | w >= 97             = (a `shiftL` 4) .|. fromIntegral (w - 87)
-                | otherwise           = (a `shiftL` 4) .|. fromIntegral (w - 55)
+
+        step :: Int -> Char -> Int
+        step a c | w >= 48 && w <= 57  = (a `shiftL` 4) .|. (w - 48)
+                | w >= 97             = (a `shiftL` 4) .|. (w - 87)
+                | otherwise           = (a `shiftL` 4) .|. (w - 55)
           where w = ord c

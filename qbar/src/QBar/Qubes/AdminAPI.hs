@@ -86,7 +86,7 @@ instance Binary QubesAdminReturn where
 qubesAdminConnect :: BL.ByteString -> [BL.ByteString] -> IO (Process () Handle ())
 qubesAdminConnect serviceName args = do
   hostname <- getHostName
-  let concatArgs sep = mconcat (map (sep<>) args)
+  let concatArgs sep = mconcat (map (sep <>) args)
   let cmd = if hostname == "dom0"
       then "qubesd-query dom0 " <> serviceName <> " dom0" <> concatArgs " "
       else "qrexec-client-vm dom0 " <> serviceName <> concatArgs "+"
@@ -114,7 +114,7 @@ qubesAdminCall serviceName args = qubesTryAdminCall serviceName args >>= extract
   extract x@Exception {} = fail $ "service has returned an exception: " <> show x
   extract Event {} = fail "service has returned events instead of a reply"
 
-qubesAdminCallP :: forall m. (P.MonadSafe m, MonadIO m, MonadFail m)
+qubesAdminCallP :: forall m. (P.MonadSafe m, MonadFail m)
   => BL.ByteString -> [BL.ByteString] -> Producer QubesAdminReturn m ()
 qubesAdminCallP serviceName args = do
   process <- liftIO $ qubesAdminConnect serviceName args
@@ -137,7 +137,7 @@ qubesAdminCallP serviceName args = do
   go (runGetIncremental get)
     `P.finally` stopProcess process
 
-qubesAdminEvents :: forall m. (P.MonadSafe m, MonadIO m, MonadFail m)
+qubesAdminEvents :: forall m. (P.MonadSafe m, MonadFail m)
   => BL.ByteString -> [BL.ByteString] -> Producer QubesAdminReturn m ()
 qubesAdminEvents serviceName args = qubesAdminCallP serviceName args >-> onlyEvents
   where
@@ -147,14 +147,14 @@ qubesAdminEvents serviceName args = qubesAdminCallP serviceName args >-> onlyEve
         Exception {} -> fail $ "service has returned an exception: " ++ show reply
         Event {} -> yield reply
 
-qubesVMStatsRaw :: forall m. (P.MonadSafe m, MonadIO m, MonadFail m)
+qubesVMStatsRaw :: forall m. (P.MonadSafe m, MonadFail m)
   => Producer QubesAdminReturn m ()
 qubesVMStatsRaw = qubesAdminEvents "admin.vm.Stats" []
 
 data QubesVMStats = QubesVMStats { statsVMName :: BL.ByteString, memoryKB :: Int, cpuTime :: Int, cpuUsageRaw :: Int, cpuUsage :: Int }
   deriving (Eq, Ord, Show, Read)
 
-qubesVMStats :: forall m. (P.MonadSafe m, MonadIO m, MonadFail m)
+qubesVMStats :: forall m. (P.MonadSafe m, MonadFail m)
   => Producer QubesVMStats m ()
 qubesVMStats = qubesVMStatsRaw >-> P.mapFoldable parse where
   parse :: QubesAdminReturn -> Maybe QubesVMStats
@@ -188,11 +188,11 @@ data QubesEvent
   | PropertyDel { domainName :: BL.ByteString, changedProperty :: BL.ByteString, oldValue :: BL.ByteString } -- reset to default value
   deriving (Eq, Ord, Show, Read)
 
-qubesEventsRaw :: forall m. (P.MonadSafe m, MonadIO m, MonadFail m)
+qubesEventsRaw :: forall m. (P.MonadSafe m, MonadFail m)
   => Producer QubesAdminReturn m ()
 qubesEventsRaw = qubesAdminEvents "admin.Events" []
 
-qubesEvents :: forall m. (P.MonadSafe m, MonadIO m, MonadFail m)
+qubesEvents :: forall m. (P.MonadSafe m, MonadFail m)
   => Producer QubesEvent m ()
 qubesEvents = qubesEventsRaw >-> P.mapFoldable parse where
   parse :: QubesAdminReturn -> Maybe QubesEvent
@@ -208,7 +208,7 @@ qubesEvents = qubesEventsRaw >-> P.mapFoldable parse where
         DomainUpdatesAvailable evSubject (boolPropViaInt "value") (boolPropViaInt "oldvalue")
       "domain-start-failed" ->
         DomainStartFailed evSubject (fromMaybe "" $ getProp "reason")
-      _ -> case BLC.break (==':') evEvent of
+      _ -> case BLC.break (== ':') evEvent of
         ("property-set", _) ->
           PropertySet evSubject (fromMaybe "" $ getProp "name") (fromMaybe "" $ getProp "newvalue") (fromMaybe "" $ getProp "oldvalue")
         ("property-del", _) ->
@@ -224,11 +224,11 @@ qubesEvents = qubesEventsRaw >-> P.mapFoldable parse where
       boolProp :: BL.ByteString -> Maybe Bool
       boolProp = readProp
       boolPropViaInt :: BL.ByteString -> Bool
-      boolPropViaInt = fromMaybe False . fmap (/=0) . intProp
+      boolPropViaInt = maybe False (/= 0) . intProp
   parse _ = Nothing  -- shouldn't happen -> report error?
 
 printEvents  :: Show a => Producer a (P.SafeT IO) () -> IO ()
-printEvents prod = P.runSafeT $ runEffect $ prod >-> (forever $ await >>= liftIO . print)
+printEvents prod = P.runSafeT $ runEffect $ prod >-> forever (await >>= liftIO . print)
 
 data QubesVMState = VMRunning | VMHalted | UnknownState
   deriving (Eq, Ord, Enum)
@@ -254,19 +254,23 @@ instance Read QubesVMState where
 qubesAdminCallLines :: BL.ByteString -> [BL.ByteString] -> IO [BL.ByteString]
 qubesAdminCallLines serviceName args = qubesAdminCall serviceName args >>= parse
   where
+    parse :: BLC.ByteString -> IO [BLC.ByteString]
     parse reply = BLC.split '\n' reply
-      & filter (/="")
+      & filter (/= "")
       & return
 
 qubesListVMs :: IO (Map.Map BL.ByteString QubesVMInfo)
 qubesListVMs = parse <$> qubesAdminCallLines "admin.vm.List" []
   where
+    parse :: [BLC.ByteString] -> Map.Map BLC.ByteString QubesVMInfo
     parse = Map.fromList . map parseLine
+
+    parseLine :: BLC.ByteString -> (BLC.ByteString, QubesVMInfo)
     parseLine line =
       (vmName, QubesVMInfo (readPropEmpty "state") (tryReadProp "class" & fromMaybe UnknownClass))
       where
         (vmName : propsRaw) = BLC.split ' ' line
-        props = map (fmap BLC.tail . BLC.break (=='=')) propsRaw
+        props = map (fmap BLC.tail . BLC.break (== '=')) propsRaw
         getProp :: BL.ByteString -> Maybe BL.ByteString
         getProp name = lookup name props
         readPropEmpty :: Read a => BL.ByteString -> a
@@ -274,7 +278,7 @@ qubesListVMs = parse <$> qubesAdminCallLines "admin.vm.List" []
         tryReadProp :: Read a => BL.ByteString -> Maybe a
         tryReadProp name = readMaybe . BLC.unpack =<< getProp name
 
-qubesListVMsP :: forall m. (P.MonadSafe m, MonadIO m, MonadFail m)
+qubesListVMsP :: forall m. (P.MonadSafe m, MonadFail m)
   => Producer (Map.Map BL.ByteString QubesVMInfo) m ()
 qubesListVMsP = liftIO qubesListVMs >>= yield >> qubesEvents >-> P.mapM (const $ liftIO qubesListVMs)
 
@@ -286,7 +290,7 @@ qubesGetProperty name = parse <$> qubesAdminCall "admin.property.Get" [name]
   where
     parse reply = QubesPropertyInfo (isDefault == "default=True") (BL.drop 5 typeStr) value
       where
-        splitOn ch = fmap BLC.tail . BLC.break (==ch)
+        splitOn ch = fmap BLC.tail . BLC.break (== ch)
         (isDefault, (typeStr, value)) = splitOn ' ' reply & fmap (splitOn ' ')
 
 qubesListPropertyNames :: IO [BL.ByteString]
@@ -304,7 +308,7 @@ qubesGetDefaultPool = propValue <$> qubesGetProperty "default_pool"
 qubesGetPoolInfo :: BL.ByteString -> IO [(BL.ByteString, BL.ByteString)]
 qubesGetPoolInfo name = map parseLine <$> qubesAdminCallLines "admin.pool.Info" [name]
   where
-    parseLine = fmap BLC.tail . BLC.break (=='=')
+    parseLine = fmap BLC.tail . BLC.break (== '=')
 
 qubesUsageOfDefaultPool :: IO (Maybe Int, Maybe Int)
 qubesUsageOfDefaultPool = qubesGetDefaultPool >>= qubesGetPoolInfo >>= extract
@@ -340,7 +344,7 @@ qubesListLabels = qubesListLabelNames >>= mapM (toSndM qubesGetLabelColor)
     toSndM :: Applicative m => (a -> m b) -> a -> m (a, b)
     toSndM f x = sequenceA (x, f x)
 
-qubesMonitorProperty :: forall m. (P.MonadSafe m, MonadIO m, MonadFail m)
+qubesMonitorProperty :: forall m. MonadIO m
   => Producer QubesEvent m () -> BL.ByteString -> Producer QubesPropertyInfo m ()
 qubesMonitorProperty events name = events >-> P.filter isRelevant >-> fetchValue
   where

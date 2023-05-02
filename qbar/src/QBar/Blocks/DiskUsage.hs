@@ -29,6 +29,6 @@ diskUsageBlock path = runPollBlock $ forever $ do
         (ExitFailure nr) -> mkErrorOutput $ "exit code " <> T.pack (show nr) <> ""
     createBlockOutput :: C8.ByteString -> BlockOutput
     createBlockOutput output = case map T.decodeUtf8 (C8.lines output) of
-      [] -> mkErrorOutput $ "no output"
-      [_header] -> mkErrorOutput $ "invalid output"
+      [] -> mkErrorOutput "no output"
+      [_header] -> mkErrorOutput "invalid output"
       (_header:values) -> mkBlockOutput $ normalText $ T.intercalate " " $ map T.strip values

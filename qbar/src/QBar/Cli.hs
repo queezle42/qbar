@@ -1,4 +1,3 @@
-{-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 module QBar.Cli (
@@ -122,7 +121,7 @@ scriptBlockParser = helper <*> do
   -- HACK optparse-applicative does not support options of style --poll[=INTERVAL],
   -- so we add a second option to specify the interval explicitly instead
   -- https://github.com/pcapriotti/optparse-applicative/issues/243
-  pollInterval <- fromMaybe defaultInterval <$> (optional $ IntervalSeconds <$> option auto (
+  pollInterval <- fromMaybe defaultInterval <$> optional (IntervalSeconds <$> option auto (
     long "interval" <>
     short 'i' <>
     metavar "SECONDS" <>

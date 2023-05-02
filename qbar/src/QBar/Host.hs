@@ -123,13 +123,13 @@ runBlocks bar HostHandle{barUpdateEvent, barUpdatedEvent, followupEventWaitTimeM
       writeIORef eventHandlerListIORef eventHandlerList
       where
         eventHandlerList :: [(T.Text, BlockEventHandler)]
-        eventHandlerList = mapMaybe getEventHandler $ blockStates
+        eventHandlerList = mapMaybe getEventHandler blockStates
 
         getEventHandler :: BlockState -> Maybe (T.Text, BlockEventHandler)
         getEventHandler Nothing = Nothing
         getEventHandler (Just (_, Nothing)) = Nothing
         getEventHandler (Just (blockOutput, Just eventHandler)) = do
-          blockName' <- blockOutput^.blockName
+          blockName' <- blockOutput ^. blockName
           return (blockName', eventHandler)
 
 

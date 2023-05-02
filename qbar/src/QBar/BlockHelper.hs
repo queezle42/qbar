@@ -127,7 +127,7 @@ runSignalBlockConfiguration SignalBlockConfiguration{aquire, release, signalThre
           liftIO $ Event.wait renderEvent
           liftIO $ Event.clear renderEvent
 
-          currentState <- liftIO . atomically $ readTVar renderStateVar
+          currentState <- liftIO (readTVarIO renderStateVar)
           renderer' currentState
           where
             renderer' :: (Maybe BlockUpdate, Bool) -> Block

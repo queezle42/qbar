@@ -63,7 +63,7 @@ class HasSleepScheduler m where
 createSleepScheduler :: MonadIO m => m SleepScheduler
 createSleepScheduler = liftIO $ do
   scheduler <- SleepScheduler <$> newMVar ([], []) <*> Event.new
-  link =<< (async $ schedulerThread scheduler)
+  link =<< async (schedulerThread scheduler)
   return scheduler
   where
     schedulerThread :: SleepScheduler -> IO ()
@@ -87,7 +87,7 @@ createSleepScheduler = liftIO $ do
 
           schedulerThread' start
 
-        -- |Waits for the next event, with a timeout. A return value of 'False' indicates a timeout occured.
+        -- Waits for the next event, with a timeout. A return value of 'False' indicates a timeout occured.
         waitForEvent :: UTCTime -> IO Bool
         waitForEvent eventTime = do
           now <- getCurrentTime
@@ -109,7 +109,7 @@ createSleepScheduler = liftIO $ do
             Event.clear trigger
             return (futureEvents, [])
 
-        -- |Predicate to check if an event should be fired.
+        -- Predicate to check if an event should be fired.
         checkEvent :: UTCTime -> ScheduledEvent -> Bool
         checkEvent now ScheduledEvent{time} = now >= time
 

@@ -246,7 +246,7 @@ newCache'' = do
 -- |Creates a cache from a block.
 cacheBlock :: Block -> BlockCache
 -- 'Block's 'yield' an update whenever they want to update the cache.
-cacheBlock pushBlock = newCache $ () <$ (pushBlock >-> updateBarP >-> addBlockName >-> PP.map (\a -> [a]))
+cacheBlock pushBlock = newCache $ void $ pushBlock >-> updateBarP >-> addBlockName >-> PP.map (: [])
   where
     updateBarP :: Pipe BlockUpdate BlockState BarIO r
     updateBarP = forever $ do
@@ -254,7 +254,7 @@ cacheBlock pushBlock = newCache $ () <$ (pushBlock >-> updateBarP >-> addBlockNa
       yield state
       updateBar reason
 
-    -- |Sets 'blockName' to a random (but static) identifier if an event handler is set but the 'blockName' is not set.
+    -- Sets 'blockName' to a random (but static) identifier if an event handler is set but the 'blockName' is not set.
     addBlockName :: Pipe BlockState BlockState BarIO r
     addBlockName = do
       defaultBlockName <- randomIdentifier
@@ -274,9 +274,9 @@ autoPadding = autoPadding' 0 0
       maybeBlock <- await
       case maybeBlock of
         (Just (block, eventHandler), reason) -> do
-          let fullLength' = max fullLength . printedLength $ block^.fullText
-          let shortLength' = max shortLength . printedLength $ block^.shortText._Just
-          yield $ (Just (padFullText fullLength' . padShortText shortLength' $ block, eventHandler), reason)
+          let fullLength' = max fullLength . printedLength $ block ^. fullText
+          let shortLength' = max shortLength . printedLength $ block ^. shortText._Just
+          yield (Just (padFullText fullLength' . padShortText shortLength' $ block, eventHandler), reason)
           autoPadding' fullLength' shortLength'
         (Nothing, reason) -> do
           yield (Nothing, reason)
