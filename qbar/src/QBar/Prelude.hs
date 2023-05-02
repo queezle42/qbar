@@ -33,15 +33,15 @@ import Prelude hiding
     head,
     undefined,
   )
-import qualified Prelude as P
-import qualified Control.Monad
 import Control.Monad ((>=>), (<=<))
-import qualified Control.Monad.IO.Class
-import qualified Data.ByteString as ByteString
-import qualified Data.Maybe as Maybe
-import qualified Data.Text.Lazy as Text
-import qualified Debug.Trace as Trace
-import qualified GHC.Stack.Types
+import Control.Monad qualified
+import Control.Monad.IO.Class qualified
+import Data.ByteString qualified as ByteString
+import Data.Maybe qualified as Maybe
+import Data.Text.Lazy qualified as Text
+import Debug.Trace qualified as Trace
+import GHC.Stack.Types
+import Prelude qualified as P
 
 {-# DEPRECATED head "Partial Function." #-}
 head :: [a] -> a

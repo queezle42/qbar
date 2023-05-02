@@ -22,9 +22,9 @@ import Control.Lens ((^.))
 import Control.Monad.State.Lazy (State, evalState, get, put)
 import Data.Colour.RGBSpace
 import Data.Colour.RGBSpace.HSV (hsv)
-import qualified Data.HashMap.Lazy as HM
+import Data.HashMap.Lazy qualified as HM
 import Data.Maybe (fromMaybe)
-import qualified Data.Text.Lazy as T
+import Data.Text.Lazy qualified as T
 import Data.Time.Clock.POSIX (getPOSIXTime)
 import Pipes
 

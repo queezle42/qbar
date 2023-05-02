@@ -23,7 +23,7 @@ import QBar.Prelude
 import QBar.Time
 
 import Control.Concurrent.Async
-import qualified Control.Concurrent.Event as Event
+import Control.Concurrent.Event qualified as Event
 import Control.Concurrent.STM.TChan
 import Control.Concurrent.STM.TVar
 import Control.Monad.Reader (ReaderT)

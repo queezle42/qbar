@@ -9,11 +9,11 @@ import QBar.TagParser
 
 import Control.Concurrent.Async
 import Data.Aeson (encode)
-import qualified Data.ByteString.Lazy.Char8 as BSC
-import qualified Data.Text.Lazy as T
+import Data.ByteString.Lazy.Char8 qualified as BSC
+import Data.Text.Lazy qualified as T
 import Pipes
 import Pipes.Concurrent
-import qualified Pipes.Prelude as PP
+import Pipes.Prelude qualified as PP
 import System.IO
 
 runPipeClient :: Bool -> MainOptions -> IO ()

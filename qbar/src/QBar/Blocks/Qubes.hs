@@ -8,13 +8,24 @@ import QBar.BlockHelper
 import QBar.BlockOutput
 import QBar.Core
 import QBar.Prelude
-import QBar.Qubes.AdminAPI (qubesUsageOfDefaultPool, qubesMonitorProperty, qubesGetProperty, qubesEvents, QubesPropertyInfo (..), qubesListVMs, qubesListVMsP, QubesVMState (..), vmState)
+import QBar.Qubes.AdminAPI (
+  QubesPropertyInfo(..),
+  QubesVMState(..),
+  QubesVMInfo(..),
+  qubesEvents,
+  qubesGetProperty,
+  qubesListVMs,
+  qubesListVMsP,
+  qubesMonitorProperty,
+  qubesUsageOfDefaultPool,
+  vmState,
+  )
 
-import qualified Data.ByteString.Lazy as BL
-import qualified Data.Map as M
-import qualified Data.Text.Lazy as T
-import Data.Text.Lazy.Encoding (decodeUtf8With)
+import Data.ByteString.Lazy qualified as BL
+import Data.Map qualified as M
 import Data.Text.Encoding.Error (lenientDecode)
+import Data.Text.Lazy qualified as T
+import Data.Text.Lazy.Encoding (decodeUtf8With)
 import Pipes as P
 import Pipes.Core as P
 

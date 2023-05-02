@@ -10,14 +10,14 @@ import QBar.ControlSocket
 import QBar.Core
 import QBar.DefaultConfig
 import QBar.Prelude
+import QBar.Qubes.AdminAPI (printEvents, qubesVMStats, qubesEvents)
 import QBar.Server
 import QBar.Theme
 import QBar.Time
-import QBar.Qubes.AdminAPI (printEvents, qubesVMStats, qubesEvents)
 
 import Control.Monad (join)
 import Data.Maybe (fromMaybe)
-import qualified Data.Text.Lazy as T
+import Data.Text.Lazy qualified as T
 import Development.GitRev
 import Options.Applicative
 

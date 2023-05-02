@@ -7,9 +7,9 @@ import QBar.BlockOutput
 import QBar.Core
 import QBar.Prelude
 
-import qualified Data.ByteString.Lazy.Char8 as C8
-import qualified Data.Text.Lazy as T
-import qualified Data.Text.Lazy.Encoding as T
+import Data.ByteString.Lazy.Char8 qualified as C8
+import Data.Text.Lazy qualified as T
+import Data.Text.Lazy.Encoding qualified as T
 import System.Exit
 import System.Process.Typed (shell, readProcessStdout)
 

@@ -45,7 +45,7 @@ import QBar.Prelude
 import Control.Lens
 import Data.Aeson
 import Data.Int (Int64)
-import qualified Data.Text.Lazy as T
+import Data.Text.Lazy qualified as T
 import GHC.Generics
 
 

@@ -18,11 +18,11 @@ module QBar.Time (
 import QBar.Prelude
 
 import Control.Concurrent.Async
+import Control.Concurrent.Event qualified as Event
 import Control.Concurrent.MVar
-import qualified Control.Concurrent.Event as Event
-import Data.Time.Clock (UTCTime, getCurrentTime, diffUTCTime, utctDayTime, addUTCTime)
-import Data.SortedList (SortedList, toSortedList, fromSortedList, singleton, partition, insert)
 import Data.Ord (comparing)
+import Data.SortedList (SortedList, toSortedList, fromSortedList, singleton, partition, insert)
+import Data.Time.Clock (UTCTime, getCurrentTime, diffUTCTime, utctDayTime, addUTCTime)
 
 newtype Interval = IntervalSeconds Integer
   deriving (Read, Show)

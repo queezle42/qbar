@@ -7,11 +7,12 @@ module QBar.Color (
 import QBar.Prelude
 
 import Data.Aeson
+import Data.Aeson.Types qualified as AT
+import Data.Attoparsec.Text.Lazy as A
 import Data.Bits ((.|.), shiftL)
 import Data.Char (ord)
-import Data.Attoparsec.Text.Lazy as A
 import Data.Colour.RGBSpace
-import qualified Data.Text.Lazy as T
+import Data.Text.Lazy qualified as T
 import Numeric (showHex)
 
 data Color = ColorRGB (RGB Double) | ColorRGBA (RGB Double) Double

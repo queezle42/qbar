@@ -10,21 +10,34 @@ import QBar.Prelude
 import QBar.TagParser
 import QBar.Time
 
-import Control.Exception (IOException, handle)
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.MVar (newEmptyMVar, putMVar, takeMVar)
+import Control.Exception (IOException, handle)
 import Data.Aeson (encode)
-import qualified Data.ByteString.Lazy.Char8 as C8
-import qualified Data.Text.Lazy as T
-import qualified Data.Text.Lazy.Encoding as E
-import qualified Data.Text.Lazy.IO as TIO
+import Data.ByteString.Lazy.Char8 qualified as C8
+import Data.Text.Lazy qualified as T
+import Data.Text.Lazy.Encoding qualified as E
+import Data.Text.Lazy.IO qualified as TIO
 import Pipes
 import Pipes.Safe (catchP)
 import System.Exit
 import System.IO hiding (stdin, stdout)
 import System.IO.Error (isEOFError)
-import System.Process.Typed (Process, shell, setStdin, setStdout,
-  getStdin, getStdout, closed, createPipe, readProcessStdout, startProcess, stopProcess, getExitCode)
+import System.Process.Typed (
+  Process,
+  ProcessConfig,
+  closed,
+  createPipe,
+  getExitCode,
+  getStdin,
+  getStdout,
+  readProcessStdout,
+  setStdin,
+  setStdout,
+  shell,
+  startProcess,
+  stopProcess,
+  )
 
 
 pollScriptBlock :: Interval -> FilePath -> Block

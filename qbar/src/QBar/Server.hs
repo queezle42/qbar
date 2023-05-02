@@ -4,29 +4,30 @@ module QBar.Server (
 ) where
 
 import QBar.BlockOutput
-import QBar.Core
 import QBar.ControlSocket
+import QBar.Core
 import QBar.Host
-import QBar.Prelude
 import QBar.Pango
+import QBar.Prelude
 import QBar.Theme
 import QBar.Utils
 
-import Control.Monad (forM_)
 import Control.Concurrent.Async (async, link)
 import Control.Concurrent.Event as Event
 import Control.Concurrent.MVar (MVar, newMVar, modifyMVar, modifyMVar_)
 import Control.Exception (throw)
+import Control.Monad (forM_)
 import Data.Aeson (encode, decode, ToJSON, toJSON, object, (.=))
+import Data.Aeson.Types qualified as AT
+import Data.ByteString.Char8 qualified as BSSC8
 import Data.ByteString.Lazy (hPut)
-import qualified Data.ByteString.Char8 as BSSC8
-import qualified Data.ByteString.Lazy as BS
-import qualified Data.ByteString.Lazy.Char8 as C8
+import Data.ByteString.Lazy qualified as BS
+import Data.ByteString.Lazy.Char8 qualified as C8
 import Data.Maybe (fromMaybe)
-import qualified Data.Text.Lazy as T
+import Data.Text.Lazy qualified as T
 import Pipes
 import Pipes.Concurrent (Input, spawn, latest, toOutput, fromInput)
-import qualified Pipes.Prelude as PP
+import Pipes.Prelude qualified as PP
 import System.IO (stdin, stdout, stderr, hFlush)
 
 data ServerMode = Host | Mirror

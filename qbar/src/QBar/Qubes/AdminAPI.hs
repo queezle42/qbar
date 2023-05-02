@@ -21,18 +21,18 @@ import Control.Monad (forM_, guard)
 import Data.Binary
 import Data.Binary.Get
 import Data.Binary.Put
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as BL
-import qualified Data.ByteString.Lazy.Char8 as BLC
+import Data.ByteString qualified as BS
+import Data.ByteString.Lazy qualified as BL
+import Data.ByteString.Lazy.Char8 qualified as BLC
 import Data.Char (isAlphaNum)
 import Data.Function ((&))
-import qualified Data.Map as Map
+import Data.Map qualified as Map
 import Data.Maybe (fromMaybe)
 import Network.HostName
 import Numeric (showHex, readHex)
 import Pipes
-import qualified Pipes.Prelude as P
-import qualified Pipes.Safe as P
+import Pipes.Prelude qualified as P
+import Pipes.Safe qualified as P
 import System.IO (Handle, hSetBinaryMode)
 import System.Process.Typed
 import Text.Read (readMaybe)

@@ -8,9 +8,9 @@ import QBar.Core
 import QBar.Prelude
 import QBar.Time
 
-import qualified Data.Text.Lazy as T
 import Data.Time.Format
 import Data.Time.LocalTime
+import Data.Text.Lazy qualified as T
 
 
 dateBlock :: Block

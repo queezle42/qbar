@@ -12,11 +12,11 @@ module QBar.Blocks (
   QBar.Blocks.Squeekboard.squeekboardBlock,
 ) where
 
-import qualified QBar.Blocks.Battery
-import qualified QBar.Blocks.CpuUsage
-import qualified QBar.Blocks.Date
-import qualified QBar.Blocks.DiskUsage
-import qualified QBar.Blocks.NetworkManager
-import qualified QBar.Blocks.Qubes
-import qualified QBar.Blocks.Script
-import qualified QBar.Blocks.Squeekboard
+import QBar.Blocks.Battery qualified
+import QBar.Blocks.CpuUsage qualified
+import QBar.Blocks.Date qualified
+import QBar.Blocks.DiskUsage qualified
+import QBar.Blocks.NetworkManager qualified
+import QBar.Blocks.Qubes qualified
+import QBar.Blocks.Script qualified
+import QBar.Blocks.Squeekboard qualified

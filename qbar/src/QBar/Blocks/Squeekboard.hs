@@ -2,17 +2,18 @@ module QBar.Blocks.Squeekboard (
   squeekboardBlock,
 ) where
 
-import Control.Monad.Except (MonadError)
-import Data.Either (isRight)
-import qualified DBus
-import qualified DBus.Client as DBus
-import DBus.Internal.Message (signalBody)
-import Pipes.Core
 import QBar.BlockHelper
 import QBar.BlockOutput
 import QBar.Blocks.NetworkManager (getDBusProperty, runExceptT_)
 import QBar.Core
 import QBar.Prelude
+
+import Control.Monad.Except (MonadError)
+import DBus qualified
+import DBus.Client qualified as DBus
+import DBus.Internal.Message (signalBody)
+import Data.Either (isRight)
+import Pipes.Core
 
 squeekboardBlock :: Bool -> Block
 squeekboardBlock autoHide = runSignalBlockConfiguration $ SignalBlockConfiguration {

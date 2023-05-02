@@ -5,10 +5,10 @@ module QBar.Blocks.NetworkManager (
 ) where
 
 import Control.Monad.Except (ExceptT, MonadError, runExceptT, throwError)
-import qualified DBus
-import qualified DBus.Client as DBus
-import qualified Data.Map as Map
-import qualified Data.Text.Lazy as T
+import DBus qualified
+import DBus.Client qualified as DBus
+import Data.Map qualified as Map
+import Data.Text.Lazy qualified as T
 import Data.Word (Word32, Word8)
 import QBar.BlockHelper
 import QBar.BlockOutput

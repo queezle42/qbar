@@ -10,8 +10,8 @@ import QBar.Prelude
 
 import Control.Lens
 import Data.Maybe (catMaybes, mapMaybe)
-import qualified Data.Text.Lazy as T
-import qualified Data.Text.Lazy.IO as TIO
+import Data.Text.Lazy qualified as T
+import Data.Text.Lazy.IO qualified as TIO
 import System.Directory
 
 data BatteryStatus = BatteryCharging | BatteryDischarging | BatteryOther

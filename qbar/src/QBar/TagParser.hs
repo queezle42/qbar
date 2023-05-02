@@ -13,8 +13,8 @@ import Control.Applicative ((<|>))
 import Data.Attoparsec.Text.Lazy as A
 import Data.Functor (($>))
 import Data.Maybe (catMaybes)
-import qualified Data.Text as TS
-import qualified Data.Text.Lazy as T
+import Data.Text qualified as TS
+import Data.Text.Lazy qualified as T
 
 type TagState = (Bool, Importance)
 

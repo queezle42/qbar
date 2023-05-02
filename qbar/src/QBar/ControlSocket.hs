@@ -24,22 +24,22 @@ import Control.Concurrent (forkFinally)
 import Control.Concurrent.Async
 import Control.Exception (SomeException, IOException, handle, onException)
 import Data.Aeson (FromJSON, ToJSON)
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Char8 as BSC
+import Data.ByteString qualified as BS
+import Data.ByteString.Char8 qualified as BSC
 import Data.Text.Lazy (pack)
+import Data.Text.Lazy qualified as T
+import Data.Text.Lazy.IO qualified as T
 import Data.Time.Clock (getCurrentTime, addUTCTime)
-import qualified Data.Text.Lazy as T
-import qualified Data.Text.Lazy.IO as T
 import GHC.Generics
 import Network.Socket
 import Pipes
-import Pipes.Concurrent as PC (Output, spawn, spawn', unbounded, newest, toOutput, fromInput, send, atomically)
-import Pipes.Parse
-import qualified Pipes.Prelude as PP
-import Pipes.Safe (catch)
 import Pipes.Aeson (decode, DecodingError)
 import Pipes.Aeson.Unchecked (encode)
+import Pipes.Concurrent as PC (Output, spawn, spawn', unbounded, newest, toOutput, fromInput, send, atomically)
 import Pipes.Network.TCP (fromSocket, toSocket)
+import Pipes.Parse
+import Pipes.Prelude qualified as PP
+import Pipes.Safe (catch)
 import System.Directory (removeFile, doesFileExist)
 import System.Environment (getEnv)
 import System.Exit (exitSuccess)

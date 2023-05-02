@@ -47,7 +47,7 @@ import QBar.Time
 import QBar.Utils
 
 import Control.Concurrent.Async
-import qualified Control.Concurrent.Event as Event
+import Control.Concurrent.Event qualified as Event
 import Control.Concurrent.MVar
 import Control.Concurrent.STM.TChan
 import Control.Lens
@@ -57,12 +57,12 @@ import Control.Monad.Writer (WriterT)
 import Data.Aeson
 import Data.Int (Int64)
 import Data.Maybe (fromMaybe)
-import qualified Data.Text.Lazy as T
+import Data.Text.Lazy qualified as T
 import GHC.Generics
 import Pipes
 import Pipes.Concurrent
+import Pipes.Prelude qualified as PP
 import Pipes.Safe (SafeT, runSafeT)
-import qualified Pipes.Prelude as PP
 
 data MainOptions = MainOptions {
   verbose :: Bool,

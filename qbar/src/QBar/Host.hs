@@ -18,7 +18,7 @@ import QBar.Utils
 
 import Control.Concurrent (forkIO, forkFinally, threadDelay)
 import Control.Concurrent.Async (async, wait, waitAny)
-import qualified Control.Concurrent.Event as Event
+import Control.Concurrent.Event qualified as Event
 import Control.Concurrent.MVar
 import Control.Concurrent.STM.TChan
 import Control.Exception (SomeException, catch, fromException)
@@ -26,7 +26,7 @@ import Control.Lens hiding (each, (.=))
 import Control.Monad.STM (atomically)
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import Data.Maybe (catMaybes, mapMaybe)
-import qualified Data.Text.Lazy as T
+import Data.Text.Lazy qualified as T
 import Pipes
 import Pipes.Concurrent (spawn, unbounded, toOutput, fromInput)
 import System.Exit (ExitCode, exitWith)

@@ -9,9 +9,9 @@ module QBar.Blocks.Utils (
 import QBar.Prelude
 
 import Control.Exception (SomeException, catch)
-import qualified Data.Attoparsec.Text.Lazy as AT
-import qualified Data.Text.Lazy as T
-import qualified Data.Text.Lazy.IO as TIO
+import Data.Attoparsec.Text.Lazy qualified as AT
+import Data.Text.Lazy qualified as T
+import Data.Text.Lazy.IO qualified as TIO
 import Numeric (showFFloat)
 
 formatFloatN :: RealFloat a => Int -> a -> T.Text
