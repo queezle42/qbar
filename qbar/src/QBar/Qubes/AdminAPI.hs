@@ -79,6 +79,8 @@ instance Binary QubesAdminReturn where
     where
       getPairs = untilZeroByte $ (,) <$> getLazyByteStringNul <*> getLazyByteStringNul
       getFields = untilZeroByte getLazyByteStringNul
+
+      untilZeroByte :: Get a -> Get [a]
       untilZeroByte inner = lookAhead getWord8 >>= \case
         0x00 -> getWord8 >> return []
         _    -> inner >>= \x -> (x:) <$> untilZeroByte inner
@@ -110,6 +112,7 @@ qubesTryAdminCall serviceName args = do
 
 qubesAdminCall :: BL.ByteString -> [BL.ByteString] -> IO BL.ByteString
 qubesAdminCall serviceName args = qubesTryAdminCall serviceName args >>= extract where
+  extract :: QubesAdminReturn -> IO BLC.ByteString
   extract Ok {okContent} = return okContent
   extract x@Exception {} = fail $ "service has returned an exception: " <> show x
   extract Event {} = fail "service has returned events instead of a reply"
@@ -164,7 +167,9 @@ qubesVMStats = qubesVMStatsRaw >-> P.mapFoldable parse where
     | otherwise = Nothing  -- shouldn't happen -> report error?
   parse _ = Nothing  -- shouldn't happen -> report error?
 
-  absent = (-1)
+  absent :: Int = -1
+
+  readBL :: BLC.ByteString -> Int
   readBL = read . BLC.unpack
 
   addProperties :: [(BL.ByteString, BL.ByteString)] -> QubesVMStats -> QubesVMStats
@@ -313,6 +318,7 @@ qubesGetPoolInfo name = map parseLine <$> qubesAdminCallLines "admin.pool.Info" 
 qubesUsageOfDefaultPool :: IO (Maybe Int, Maybe Int)
 qubesUsageOfDefaultPool = qubesGetDefaultPool >>= qubesGetPoolInfo >>= extract
   where
+    extract :: [(BLC.ByteString, BLC.ByteString)] -> IO (Maybe Int, Maybe Int)
     extract props = return (tryReadProp "usage" props, tryReadProp "size" props)
     tryReadProp :: Read a => BL.ByteString -> [(BL.ByteString, BL.ByteString)] -> Maybe a
     tryReadProp name props = readMaybe . BLC.unpack =<< lookup name props
@@ -348,7 +354,10 @@ qubesMonitorProperty :: forall m. MonadIO m
   => Producer QubesEvent m () -> BL.ByteString -> Producer QubesPropertyInfo m ()
 qubesMonitorProperty events name = events >-> P.filter isRelevant >-> fetchValue
   where
+    fetchValue :: Proxy () QubesEvent () QubesPropertyInfo m b
     fetchValue = liftIO (qubesGetProperty name) >>= go
+
+    go :: QubesPropertyInfo -> Proxy () QubesEvent () QubesPropertyInfo m b
     go x = do
       yield x
       ev <- await
@@ -356,6 +365,7 @@ qubesMonitorProperty events name = events >-> P.filter isRelevant >-> fetchValue
         PropertySet {newValue} -> go $ x { propIsDefault = False, propValue = newValue }
         PropertyDel {} -> fetchValue
         _ -> go x
+
     isRelevant PropertySet {changedProperty} = name == changedProperty
     isRelevant PropertyDel {changedProperty} = name == changedProperty
     isRelevant _ = False

@@ -195,7 +195,9 @@ runSignalBlockConfiguration SignalBlockConfiguration{aquire, release, signalThre
             sendSignal signal = do
               maybeOutput <- request signal
 
-              let updateInvalidatedState = if isEventSignal signal then (_2 .~ False) else id
+              let
+                updateInvalidatedState :: (Maybe BlockUpdate, Bool) -> (Maybe BlockUpdate, Bool)
+                updateInvalidatedState = if isEventSignal signal then _2 .~ False else id
 
               let blockUpdate = (mkBlockStateWithHandler maybeOutput, signalToReason signal)
               liftIO . atomically $ modifyTVar renderStateVar ((_1 . _Just .~ blockUpdate) . updateInvalidatedState)

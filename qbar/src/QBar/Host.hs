@@ -240,11 +240,14 @@ runBarHost' initializeBarAction = do
     attachBarOutputImpl :: MVar ExitCode -> Producer [BlockOutput] IO () -> Consumer BlockEvent IO () -> (Consumer [BlockOutput] IO (), Producer BlockEvent IO ()) -> IO ()
     attachBarOutputImpl exitMVar blockOutputProducer eventConsumer (barOutputConsumer, barEventProducer) = do
 
-
-      let handleBarEventInput = liftIO $ runEffect $ barEventProducer >-> eventConsumer
+      let
+        handleBarEventInput :: IO ()
+        handleBarEventInput = liftIO $ runEffect $ barEventProducer >-> eventConsumer
       liftIO $ void $ forkFinally handleBarEventInput $ handleOnExitCodeException (\result -> hPutStrLn stderr $ "An event input handler failed: " <> show result)
 
-      let handleBarOutput = liftIO $ runEffect $ blockOutputProducer >-> filterDuplicates >-> barOutputConsumer
+      let
+        handleBarOutput :: IO ()
+        handleBarOutput = liftIO $ runEffect $ blockOutputProducer >-> filterDuplicates >-> barOutputConsumer
       liftIO $ void $ forkFinally handleBarOutput $ handleOnExitCodeException (\result -> hPutStrLn stderr $ "A bar output handler failed: " <> show result)
 
       where

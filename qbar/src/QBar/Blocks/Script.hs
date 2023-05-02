@@ -28,7 +28,11 @@ import System.Process.Typed (Process, shell, setStdin, setStdout,
 
 
 pollScriptBlock :: Interval -> FilePath -> Block
-pollScriptBlock interval path = runPollBlock' interval $ forever $ yieldBlockUpdate =<< (lift blockScriptAction)
+pollScriptBlock interval path = runPollBlock' interval $ forever $ do
+  -- Why doesn't this typecheck when using >>= instead?
+  x <- lift blockScriptAction
+  yieldBlockUpdate x
+
   where
     blockScriptAction :: BarIO BlockOutput
     blockScriptAction = do
@@ -58,6 +62,7 @@ scriptBlock clickEvents path = startScriptProcess
         startScriptProcess
       Right x  -> x
       where
+        result :: Either Text Block
         result = case (isEOFError exc, exitCode) of
           (True, Just ExitSuccess)      -> Right exitBlock
           (True, Just (ExitFailure nr)) ->
@@ -92,7 +97,9 @@ scriptBlock clickEvents path = startScriptProcess
         else startScriptProcessNoEvents
     startScriptProcessNoEvents :: Block
     startScriptProcessNoEvents = do
-      let processConfig = setStdin closed $ setStdout createPipe $ shell path
+      let
+        processConfig :: ProcessConfig () Handle ()
+        processConfig = setStdin closed $ setStdout createPipe $ shell path
       process <- startProcess processConfig
       -- The inner catchP catches errors that happen after the process has been created
       -- This handler will also make sure the process is stopped

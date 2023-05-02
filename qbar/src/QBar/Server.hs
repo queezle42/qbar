@@ -44,9 +44,16 @@ instance ToJSON PangoBlock where
   toJSON PangoBlock{pangoBlockFullText, pangoBlockShortText, pangoBlockName} = object $
     fullText' <> shortText' <> blockName' <> pango'
     where
+      fullText' :: [AT.Pair]
       fullText' = [ "full_text" .= pangoBlockFullText ]
+
+      shortText' :: [AT.Pair]
       shortText' = fromMaybe (\s -> ["short_text" .= s]) mempty pangoBlockShortText
+
+      blockName' :: [AT.Pair]
       blockName' = fromMaybe (\s -> ["name" .= s]) mempty pangoBlockName
+
+      pango' :: [AT.Pair]
       pango' = [ "markup" .= ("pango" :: T.Text) ]
 
 
@@ -64,7 +71,9 @@ swayBarInput MainOptions{verbose} = swayBarInput'
           liftIO $ BSSC8.hPutStrLn stderr line
           hFlush stderr
 
-        let maybeBlockEvent = decode $ removeComma $ BS.fromStrict line
+        let
+          maybeBlockEvent :: Maybe BlockEvent
+          maybeBlockEvent = decode $ removeComma $ BS.fromStrict line
         forM_ maybeBlockEvent yield
 
       swayBarInput'

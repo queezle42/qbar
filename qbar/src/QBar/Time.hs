@@ -39,7 +39,7 @@ nextIntervalTime :: MonadIO m => Interval -> m UTCTime
 nextIntervalTime (IntervalSeconds intervalSeconds) = liftIO $ do
   now <- getCurrentTime
   let dayTime = utctDayTime now
-  let daySeconds = floor dayTime
+  let daySeconds :: Integer = floor dayTime
   let intervalId = daySeconds `div` intervalSeconds
   return now {
     utctDayTime = fromInteger $ (intervalId + 1) * intervalSeconds

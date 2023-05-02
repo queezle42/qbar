@@ -74,8 +74,13 @@ networkManagerBlock = runSignalBlockConfiguration $ SignalBlockConfiguration {
       return client
     release :: DBus.Client -> BarIO ()
     release = liftIO . DBus.disconnect
+
     networkManagerBlock' :: DBus.Client -> SignalBlock ()
-    networkManagerBlock' client = (liftBarIO . networkManagerBlock'' client) >=> respondBlockUpdate >=> networkManagerBlock' client
+    networkManagerBlock' client
+      = (liftBarIO . networkManagerBlock'' client)
+      >=> (\x -> respondBlockUpdate x) -- why doesn't this type check without \->?
+      >=> networkManagerBlock' client
+
     networkManagerBlock'' :: DBus.Client -> Signal () -> BarIO BlockOutput
     networkManagerBlock'' client _ = do
       primaryConnection <- runExceptT_ $ getPrimaryConnectionPath client

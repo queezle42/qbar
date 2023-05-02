@@ -16,8 +16,11 @@ import Numeric (showHex)
 
 data Color = ColorRGB (RGB Double) | ColorRGBA (RGB Double) Double
   deriving (Eq, Show)
+
 instance FromJSON Color where
-  parseJSON = withText "Color" $ either fail pure . parseOnly (colorParser <* endOfInput)
+  parseJSON :: Value -> AT.Parser Color
+  parseJSON = withText "Color" $ either fail pure . A.parseOnly (colorParser <* endOfInput) . T.fromStrict
+
 instance ToJSON Color where
   toJSON = String . T.toStrict . hexColorText
 
@@ -39,17 +42,17 @@ hexColorText = hexColor'
     paddedHexComponent :: Text -> Text
     paddedHexComponent hex =
       let len = 2 - T.length hex
-          padding = if len == 1 then "0" else ""
+          padding :: Text = if len == 1 then "0" else ""
       in padding <> hex
 
 
-colorParser :: Parser Color
+colorParser :: A.Parser Color
 colorParser = do
   void $ char '#'
   rgb <- RGB <$> doubleFromHex2 <*> doubleFromHex2 <*> doubleFromHex2
   option (ColorRGB rgb) (ColorRGBA rgb <$> doubleFromHex2)
   where
-    doubleFromHex2 :: Parser Double
+    doubleFromHex2 :: A.Parser Double
     doubleFromHex2 = (/ 256) . fromIntegral <$> hexadecimal'' 2
 
     -- Variant of 'Data.Attoparsec.Text.hexadecimal' that parses a fixed amount of digits.

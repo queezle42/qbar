@@ -50,7 +50,6 @@ data ThemedBlockTextSegment = ThemedBlockTextSegment {
   }
   deriving (Eq, Show)
 
-
 data Theme = StaticTheme StaticTheme | AnimatedTheme AnimatedTheme
 
 type StaticTheme = [BlockOutput] -> [ThemedBlockOutput]
@@ -78,6 +77,7 @@ themes = HM.fromList themesList
 findTheme :: Text -> Either Text Theme
 findTheme themeName = maybe invalidThemeName Right $ HM.lookup themeName themes
   where
+    invalidThemeName :: Either Text Theme
     invalidThemeName = Left $ "Invalid theme: " <> themeName
 
 mkTheme :: SimplifiedTheme -> Theme
@@ -122,7 +122,6 @@ mkThemedSegment (color, backgroundColor) text = ThemedBlockTextSegment{themedSeg
 whiteThemedBlockOutput :: Text -> ThemedBlockOutput
 whiteThemedBlockOutput = mkThemedBlockOutput (ColorRGB (RGB 1 1 1), Nothing)
 
-
 invalidColor :: Color
 invalidColor = ColorRGBA (RGB (0x96 / 255) (0x98 / 255) (0x96 / 255)) (0x77 / 255)
 
@@ -141,7 +140,6 @@ defaultTheme = mkTheme defaultTheme'
     defaultTheme' False (WarnImportant _) = (ColorRGB (RGB 0.6 0.6 0), Nothing)
     defaultTheme' True (NormalImportant _) = (ColorRGB (RGB 1 1 1), Nothing)
     defaultTheme' False (NormalImportant _) = (ColorRGB (RGB (0x96 / 255) (0x98 / 255) (0x96 / 255)), Nothing)
-
 
 rainbowTheme :: Theme
 rainbowTheme = AnimatedTheme rainbowThemePipe

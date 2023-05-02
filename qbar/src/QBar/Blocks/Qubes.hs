@@ -30,12 +30,17 @@ diskUsageQubesBlock = runPollBlock $ forever $ do
     action = liftIO qubesUsageOfDefaultPool >>= \case
       (Just usage, Just size) -> return $ createBlockOutput $ size - usage
       _ -> return $ mkErrorOutput "unknown"
+
     createBlockOutput :: Int -> BlockOutput
     createBlockOutput free =
       mkBlockOutput $ chooseColor free $ formatSize free
+
+    chooseColor :: Int -> Text -> BlockText
     chooseColor free = if free < 40 * 1024*1024*1024
       then activeText
       else normalText
+
+    sizeUnits :: [(Text, Int)]
     sizeUnits = [
         ("T", 1024*1024*1024*1024),
         ("G", 1024*1024*1024),
@@ -52,8 +57,10 @@ pipeBlockWithEvents prod block = runSignalBlock Nothing (Just produce) sblock
   where
     produce :: (a -> IO ()) -> BarIO ()
     produce yield' = runEffect $ prod >-> forever (await >>= liftIO . yield')
+
     sblock :: Signal a -> P.Server (Signal a) (Maybe BlockOutput) BarIO ExitBlock
     sblock = lift . sblock' >=> respond >=> sblock
+
     sblock' :: Signal a -> BarIO (Maybe BlockOutput)
     sblock' RegularSignal = return Nothing  -- ignore timer
     sblock' (UserSignal x) = block $ Right x
@@ -62,12 +69,20 @@ pipeBlockWithEvents prod block = runSignalBlock Nothing (Just produce) sblock
 qubesMonitorPropertyBlock :: BL.ByteString -> Block
 qubesMonitorPropertyBlock name = pipeBlockWithEvents (qubesMonitorProperty qubesEvents name) handle
   where
+    handle :: Either a QubesPropertyInfo -> BarIO (Maybe BlockOutput)
     handle = fmap handle' . either (const $ liftIO $ qubesGetProperty name) return
+
     handle' QubesPropertyInfo {propValue, propIsDefault} = Just $ mkBlockOutput $ normalText $ decode propValue <> (if propIsDefault then " (D)" else "")
     decode = decodeUtf8With lenientDecode
 
 qubesVMCountBlock :: Block
-qubesVMCountBlock = pipeBlockWithEvents qubesListVMsP $ fmap countVMs . either (const $ liftIO $ qubesListVMs) return where
-  countVMs = Just . format . M.size . M.filterWithKey isRunningVM
-  isRunningVM name x = vmState x == VMRunning && name /= "dom0"
-  format n = mkBlockOutput $ normalText $ T.pack (show n) <> " Qube" <> (if n /= 1 then "s" else "")
+qubesVMCountBlock = pipeBlockWithEvents qubesListVMsP $ fmap countVMs . either (const $ liftIO qubesListVMs) return
+  where
+    countVMs :: M.Map BL.ByteString  QubesVMInfo -> Maybe BlockOutput
+    countVMs = Just . format . M.size . M.filterWithKey isRunningVM
+
+    isRunningVM :: BL.ByteString -> QubesVMInfo -> Bool
+    isRunningVM name x = vmState x == VMRunning && name /= "dom0"
+
+    format :: Int -> BlockOutput
+    format n = mkBlockOutput $ normalText $ T.pack (show n) <> " Qube" <> (if n /= 1 then "s" else "")
