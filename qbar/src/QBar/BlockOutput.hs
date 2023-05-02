@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -Wno-partial-fields #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 module QBar.BlockOutput (
