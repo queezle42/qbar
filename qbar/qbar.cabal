@@ -1,0 +1,133 @@
+cabal-version: 3.0
+
+name:           qbar
+
+version:        0.1.0.0
+author:         Jens Nolte
+maintainer:     Jens Nolte
+copyright:      2019 Jens Nolte
+license:        BSD-3-Clause
+build-type:     Simple
+
+--source-repository head
+--  type: git
+--  location: https:////git.c3pb.de/jens/qbar.git
+
+common shared-properties
+  default-language: GHC2021
+  default-extensions:
+    ApplicativeDo
+    DuplicateRecordFields
+    LambdaCase
+    MultiWayIf
+    NoImplicitPrelude
+    OverloadedStrings
+  ghc-options:
+    -Weverything
+    -Wno-all-missed-specialisations
+    -Wno-missing-deriving-strategies
+    -Wno-implicit-prelude
+    -Wno-missing-import-lists
+    -Wno-missing-kind-signatures
+    -Wno-missing-safe-haskell-mode
+    -Wno-unsafe
+    -Werror=incomplete-patterns
+    -Werror=missing-fields
+    -Werror=missing-home-modules
+    -Werror=missing-methods
+
+library
+  import: shared-properties
+  build-depends:
+    aeson,
+    async,
+    attoparsec,
+    base >=4.7 && <5,
+    binary,
+    bytestring,
+    colour,
+    concurrent-extra,
+    containers,
+    dbus,
+    directory,
+    filepath,
+    gitrev,
+    hostname,
+    lens,
+    mtl,
+    network,
+    optparse-applicative,
+    pipes,
+    pipes-aeson,
+    pipes-concurrency,
+    pipes-network,
+    pipes-parse,
+    pipes-safe,
+    quasar,
+    quasar-timer,
+    random,
+    sorted-list,
+    stm,
+    text,
+    time,
+    typed-process,
+    unix,
+    unordered-containers,
+  exposed-modules:
+    QBar.BlockHelper
+    QBar.BlockOutput
+    QBar.Blocks
+    QBar.Blocks.Battery
+    QBar.Blocks.CpuUsage
+    QBar.Blocks.Date
+    QBar.Blocks.DiskUsage
+    QBar.Blocks.NetworkManager
+    QBar.Blocks.Pipe
+    QBar.Blocks.Qubes
+    QBar.Blocks.Script
+    QBar.Blocks.Squeekboard
+    QBar.Blocks.Utils
+    QBar.Cli
+    QBar.Color
+    QBar.ControlSocket
+    QBar.Core
+    QBar.DefaultConfig
+    QBar.Host
+    QBar.Pango
+    QBar.Prelude
+    QBar.Qubes.AdminAPI
+    QBar.Server
+    QBar.TagParser
+    QBar.Theme
+    QBar.Time
+    QBar.Utils
+  other-modules:
+  hs-source-dirs:
+    src
+
+executable qbar
+  import: shared-properties
+  ghc-options:
+    -threaded
+    -rtsopts
+    "-with-rtsopts=-N -I0"
+  build-depends:
+    qbar,
+  hs-source-dirs:
+    app
+  main-is: Main.hs
+
+test-suite qbar-test
+  import: shared-properties
+  type: exitcode-stdio-1.0
+  ghc-options:
+    -threaded
+    -rtsopts
+    "-with-rtsopts=-N -I0"
+  main-is: Spec.hs
+  other-modules:
+    Paths_qbar
+  hs-source-dirs:
+    test
+  build-depends:
+    base >=4.7 && <5,

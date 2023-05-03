@@ -2,6 +2,7 @@
   inputs = {
     nixpkgs.url = github:NixOS/nixpkgs/nixos-unstable;
     quasar.url = github:queezle42/quasar;
+    quasar.inputs.nixpkgs.follows = "nixpkgs";
   };
 
   outputs = { self, nixpkgs, quasar }:
@@ -19,10 +20,13 @@
   in {
     packages = forAllSystems (system:
       let
-        pkgs = import nixpkgs { inherit system; overlays = [
-          self.overlays.default
-          quasar.overlays.default
-        ]; };
+        pkgs = import nixpkgs {
+          inherit system;
+          overlays = [
+            self.overlays.default
+            quasar.overlays.default
+          ];
+        };
         haskellPackages = getHaskellPackages pkgs "ghc94.";
         results = {
           qbar = haskellPackages.qbar;
@@ -36,17 +40,20 @@
       haskell = prev.haskell // {
         packageOverrides = hfinal: hprev: prev.haskell.packageOverrides hfinal hprev // {
           qbar = hfinal.generateOptparseApplicativeCompletions ["qbar"]
-            (hfinal.callCabal2nix "qbar" ./. {});
+            (hfinal.callCabal2nix "qbar" ./qbar {});
         };
       };
     };
 
     devShells = forAllSystems (system:
       let
-        pkgs = import nixpkgs { inherit system; overlays = [
-          self.overlays.default
-          quasar.overlays.default
-        ]; };
+        pkgs = import nixpkgs {
+          inherit system;
+          overlays = [
+            self.overlays.default
+            quasar.overlays.default
+          ];
+        };
         haskellPackages = getHaskellPackages pkgs "ghc94.";
       in rec {
         default = haskellPackages.shellFor {
@@ -54,16 +61,17 @@
             hpkgs.qbar
           ];
           nativeBuildInputs = [
+            haskellPackages.haskell-language-server
             pkgs.cabal-install
-            pkgs.zsh
+            pkgs.hlint
+
+            # in addition, for ghcid-wrapper
             pkgs.entr
             pkgs.ghcid
-            haskellPackages.haskell-language-server
-            pkgs.hlint
+            pkgs.zsh
           ];
         };
       }
     );
   };
 }
-

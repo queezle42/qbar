@@ -1,0 +1,38 @@
+#!/usr/bin/env -S nix develop -L -c zsh
+
+set -euo pipefail
+
+readonly target=${1:-lib:qbar}
+readonly executable=${2:-}
+
+if [[ -n $executable ]]
+then
+  run_executable="cabal run \
+    --disable-optimisation \
+    --ghc-option -fdiagnostics-color=always \
+    $executable \
+    "
+else
+  run_executable=true
+fi
+
+print -P %F{yellow}Cleaning repository%f
+cabal clean
+
+(
+  git ls-files 'examples/*' '*/test' '*/*.cabal' 'flake.*'
+  echo "ghcid-wrapper"
+) | \
+  entr -r \
+    nix develop -L -c \
+      ghcid \
+        --warnings \
+        "--command=cabal repl $target" \
+        "--test=:! \
+          cabal test \
+            --disable-optimisation \
+            --test-show-details=direct \
+            --ghc-option -fdiagnostics-color=always && \
+          $run_executable && \
+          zsh -c 'print -P %F{green}Build and tests passed%f' \
+        "
