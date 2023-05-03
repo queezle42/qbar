@@ -36,6 +36,13 @@
       }
     );
 
+    apps = forAllSystems (system: {
+      default = {
+        type = "app";
+        program = "${self.packages.${system}.qbar}/bin/qbar";
+      };
+    });
+
     overlays.default = final: prev: {
       haskell = prev.haskell // {
         packageOverrides = hfinal: hprev: prev.haskell.packageOverrides hfinal hprev // {
